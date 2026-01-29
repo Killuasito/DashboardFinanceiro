@@ -2,18 +2,32 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { collection, query, onSnapshot, addDoc } from 'firebase/firestore';
+import { collection, query, onSnapshot, addDoc, doc, updateDoc } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from './AuthProvider';
 import { useTheme } from './ThemeProvider';
 import { Account } from '@/types';
-import { FiHome, FiPlusCircle, FiLogOut, FiDollarSign, FiMoon, FiSun } from 'react-icons/fi';
+import {
+  FiHome,
+  FiPlusCircle,
+  FiLogOut,
+  FiDollarSign,
+  FiMoon,
+  FiSun,
+  FiBarChart2,
+  FiEdit3,
+  FiCheck,
+  FiX,
+} from 'react-icons/fi';
 
 export default function Sidebar() {
   const [accounts, setAccounts] = useState<Account[]>([]);
   const [showAddAccount, setShowAddAccount] = useState(false);
   const [newAccountName, setNewAccountName] = useState('');
   const [newAccountBalance, setNewAccountBalance] = useState('');
+  const [editingAccountId, setEditingAccountId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editBalance, setEditBalance] = useState('');
   const { user, logout } = useAuth();
   const { theme, toggleTheme } = useTheme();
   const router = useRouter();
@@ -52,6 +66,37 @@ export default function Sidebar() {
     }
   };
 
+  const startEdit = (account: Account) => {
+    setEditingAccountId(account.id);
+    setEditName(account.name);
+    setEditBalance(account.balance.toString());
+  };
+
+  const cancelEdit = () => {
+    setEditingAccountId(null);
+    setEditName('');
+    setEditBalance('');
+  };
+
+  const handleUpdateAccount = async () => {
+    if (!user || !editingAccountId) return;
+    const name = editName.trim();
+    if (!name) return;
+
+    const parsedBalance = parseFloat(editBalance || '0');
+    const accountRef = doc(db, 'users', user.uid, 'accounts', editingAccountId);
+
+    try {
+      await updateDoc(accountRef, {
+        name,
+        balance: Number.isNaN(parsedBalance) ? 0 : parsedBalance,
+      });
+      cancelEdit();
+    } catch (error) {
+      console.error('Erro ao atualizar conta:', error);
+    }
+  };
+
   return (
     <aside className="w-64 bg-gradient-to-b from-blue-900 via-slate-950 to-slate-950 dark:from-blue-950 dark:via-slate-950 dark:to-black text-white h-screen fixed left-0 top-0 flex flex-col shadow-2xl border-r-2 border-blue-900/50">
       <div className="p-6 border-b-2 border-blue-900/50 bg-gradient-to-r from-blue-900/20 to-transparent">
@@ -73,6 +118,14 @@ export default function Sidebar() {
           <span className="font-bold text-blue-100">Contas Bancárias</span>
         </button>
 
+        <button
+          onClick={() => router.push('/dashboard/reports')}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-900/20 hover:bg-blue-800/40 transition-all duration-200 mb-6 group border border-blue-800/40 hover:border-blue-500 shadow-lg"
+        >
+          <FiBarChart2 className="group-hover:scale-110 transition-transform text-blue-300" size={20} />
+          <span className="font-bold text-blue-100">Relatórios</span>
+        </button>
+
         <div className="mt-6">
           <div className="flex items-center justify-between mb-3 px-2">
             <h3 className="text-sm font-black text-blue-400 uppercase tracking-wider">Minhas Contas</h3>
@@ -91,14 +144,14 @@ export default function Sidebar() {
                 placeholder="Nome da conta"
                 value={newAccountName}
                 onChange={(e) => setNewAccountName(e.target.value)}
-                className="w-full px-4 py-2.5 bg-slate-900 rounded-lg mb-2 text-sm border border-blue-800/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                className="w-full px-4 py-2.5 bg-slate-900 rounded-lg mb-2 text-sm border border-blue-800/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-all font-medium outline-none"
               />
               <input
                 type="number"
                 placeholder="Saldo inicial"
                 value={newAccountBalance}
                 onChange={(e) => setNewAccountBalance(e.target.value)}
-                className="w-full px-4 py-2.5 bg-slate-900 rounded-lg mb-3 text-sm border border-blue-800/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-all font-medium"
+                className="w-full px-4 py-2.5 bg-slate-900 rounded-lg mb-3 text-sm border border-blue-800/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 transition-all font-medium outline-none"
               />
               <button
                 type="submit"
@@ -111,16 +164,66 @@ export default function Sidebar() {
 
           <div className="space-y-2">
             {accounts.map((account) => (
-              <button
+              <div
                 key={account.id}
-                onClick={() => router.push(`/dashboard/${account.id}`)}
-                className="w-full text-left px-4 py-3 rounded-xl hover:bg-blue-900/50 transition-all duration-200 group bg-slate-900/50 border-2 border-blue-900/30 hover:border-blue-500 shadow-md hover:shadow-lg hover:scale-[1.02]"
+                className="w-full px-4 py-3 rounded-xl bg-slate-900/50 border-2 border-blue-900/30 shadow-md hover:shadow-lg transition-all duration-200 group"
               >
-                <div className="font-bold group-hover:text-blue-400 transition-colors text-blue-100">{account.name}</div>
-                <div className="text-sm text-slate-400 group-hover:text-cyan-400 transition-colors font-medium">
-                  R$ {account.balance.toFixed(2)}
-                </div>
-              </button>
+                {editingAccountId === account.id ? (
+                  <div className="space-y-2">
+                    <input
+                      type="text"
+                      value={editName}
+                      onChange={(e) => setEditName(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-900 rounded-lg text-sm border border-blue-800/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none"
+                      placeholder="Nome da conta"
+                    />
+                    <input
+                      type="number"
+                      value={editBalance}
+                      onChange={(e) => setEditBalance(e.target.value)}
+                      className="w-full px-3 py-2 bg-slate-900 rounded-lg text-sm border border-blue-800/50 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none"
+                      placeholder="Saldo inicial"
+                    />
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={handleUpdateAccount}
+                        className="flex-1 inline-flex items-center justify-center gap-2 bg-emerald-600 hover:bg-emerald-700 text-white px-3 py-2 rounded-lg text-sm font-bold transition"
+                      >
+                        <FiCheck size={16} /> Salvar
+                      </button>
+                      <button
+                        type="button"
+                        onClick={cancelEdit}
+                        className="inline-flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-bold text-slate-200 hover:text-white border border-slate-700 hover:border-slate-500 transition"
+                      >
+                        <FiX size={16} />
+                      </button>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="flex items-start justify-between gap-3">
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/dashboard/${account.id}`)}
+                      className="text-left flex-1"
+                    >
+                      <div className="font-bold group-hover:text-blue-400 transition-colors text-blue-100">{account.name}</div>
+                      <div className="text-sm text-slate-400 group-hover:text-cyan-400 transition-colors font-medium">
+                        R$ {account.balance.toFixed(2)}
+                      </div>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => startEdit(account)}
+                      className="p-2 rounded-lg text-slate-400 hover:text-blue-300 hover:bg-blue-900/50 transition"
+                      aria-label={`Editar conta ${account.name}`}
+                    >
+                      <FiEdit3 size={16} />
+                    </button>
+                  </div>
+                )}
+              </div>
             ))}
           </div>
         </div>

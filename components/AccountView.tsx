@@ -14,7 +14,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from './AuthProvider';
 import { Transaction } from '@/types';
 import TransactionModal from './TransactionModal';
-import { FiPlus, FiArrowUp, FiArrowDown, FiTrash, FiDollarSign, FiTrendingUp, FiTrendingDown, FiPieChart, FiBarChart2, FiList } from 'react-icons/fi';
+import { FiPlus, FiArrowUp, FiArrowDown, FiTrash, FiDollarSign, FiTrendingUp, FiTrendingDown, FiPieChart, FiBarChart2, FiList, FiChevronDown, FiChevronRight } from 'react-icons/fi';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent';
@@ -29,6 +29,7 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
   const [accountTitle, setAccountTitle] = useState(accountName);
   const [accountBalance, setAccountBalance] = useState(0);
   const [showModal, setShowModal] = useState(false);
+  const [showTransactions, setShowTransactions] = useState(true);
   const { user } = useAuth();
 
   useEffect(() => {
@@ -152,17 +153,26 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
   };
 
   return (
-    <div className="p-8 min-h-screen bg-gradient-to-br from-blue-50 via-slate-50 to-cyan-50 dark:from-slate-950 dark:via-blue-950 dark:to-slate-950">
-      <div className="flex items-center justify-between mb-8">
-        <div className="border-l-4 border-blue-600 pl-6">
-          <h2 className="text-5xl font-black text-blue-600 dark:text-blue-400">{accountTitle}</h2>
-          <p className="text-lg text-slate-700 dark:text-slate-300 mt-2 font-semibold">
-            Saldo: <span className={`font-black text-2xl ${accountBalance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'}`}>R$ {accountBalance.toFixed(2)}</span>
+    <div className="p-4 sm:p-6 lg:p-8 min-h-screen bg-gradient-to-br from-blue-50 via-slate-50 to-cyan-50 dark:from-slate-950 dark:via-blue-950 dark:to-slate-950">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6 sm:mb-8">
+        <div className="border-l-4 border-blue-600 pl-4 sm:pl-6">
+          <h2 className="text-3xl sm:text-4xl lg:text-5xl font-black text-blue-600 dark:text-blue-400 break-words">
+            {accountTitle}
+          </h2>
+          <p className="text-base sm:text-lg text-slate-700 dark:text-slate-300 mt-2 font-semibold">
+            Saldo:{' '}
+            <span
+              className={`font-black text-xl sm:text-2xl ${
+                accountBalance >= 0 ? 'text-blue-600 dark:text-blue-400' : 'text-rose-600 dark:text-rose-400'
+              }`}
+            >
+              R$ {accountBalance.toFixed(2)}
+            </span>
           </p>
         </div>
         <button
           onClick={() => setShowModal(true)}
-          className="flex items-center gap-2 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-700 hover:via-blue-600 hover:to-cyan-600 text-white px-8 py-4 rounded-xl transition-all duration-200 font-bold shadow-lg shadow-blue-500/50 hover:shadow-xl hover:scale-105"
+          className="inline-flex items-center justify-center gap-2 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-700 hover:via-blue-600 hover:to-cyan-600 text-white px-4 py-3 sm:px-6 sm:py-4 rounded-xl transition-all duration-200 font-bold shadow-lg shadow-blue-500/50 hover:shadow-xl hover:scale-105 w-full sm:w-auto"
         >
           <FiPlus size={20} />
           Nova Transação
@@ -250,69 +260,92 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
 
       {/* Lista de Transações */}
       <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-xl border-2 border-blue-200 dark:border-blue-900">
-        <div className="p-6 border-b-2 border-blue-200 dark:border-blue-900 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30">
+        <div className="p-6 border-b-2 border-blue-200 dark:border-blue-900 bg-gradient-to-r from-blue-50 to-cyan-50 dark:from-blue-950/30 dark:to-cyan-950/30 flex items-center justify-between gap-4">
           <h3 className="text-2xl font-black text-blue-600 dark:text-blue-400 flex items-center gap-2">
             <FiList />
             <span>Transações</span>
           </h3>
+          <button
+            type="button"
+            onClick={() => setShowTransactions((prev) => !prev)}
+            className="inline-flex items-center gap-2 text-sm font-semibold text-blue-600 dark:text-blue-300 hover:text-blue-700 dark:hover:text-blue-200 px-3 py-1.5 rounded-lg bg-white/60 dark:bg-slate-800/60 border border-blue-200 dark:border-blue-800 shadow-sm transition"
+            aria-expanded={showTransactions}
+          >
+            {showTransactions ? <FiChevronDown size={16} /> : <FiChevronRight size={16} />}
+            {showTransactions ? 'Ocultar' : 'Mostrar'}
+          </button>
         </div>
 
-        {transactions.length === 0 ? (
-          <div className="p-12 text-center text-slate-500 dark:text-slate-400 font-medium">
-            Nenhuma transação registrada ainda
-          </div>
-        ) : (
-          <div className="divide-y-2 divide-blue-100 dark:divide-blue-900">
-            {transactions.map((transaction) => (
-              <div
-                key={transaction.id}
-                className="p-5 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition flex items-center justify-between group"
-              >
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`p-3 rounded-xl shadow-md ${
-                      transaction.type === 'income'
-                        ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white'
-                        : 'bg-gradient-to-br from-rose-500 to-rose-600 text-white'
-                    }`}
-                  >
-                    {transaction.type === 'income' ? (
-                      <FiArrowUp size={24} />
-                    ) : (
-                      <FiArrowDown size={20} />
-                    )}
-                  </div>
-                  <div>
-                    <p className="font-semibold text-slate-800 dark:text-slate-100">{transaction.category}</p>
-                    {transaction.description && (
-                      <p className="text-sm text-slate-600 dark:text-slate-400">{transaction.description}</p>
-                    )}
-                    <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                      {new Date(transaction.date).toLocaleDateString('pt-BR')}
-                    </p>
-                  </div>
-                </div>
-                <div className="flex items-center gap-4">
-                  <div
-                    className={`text-xl font-bold ${
-                      transaction.type === 'income' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
-                    }`}
-                  >
-                    {transaction.type === 'income' ? '+' : '-'} R${' '}
-                    {transaction.amount.toFixed(2)}
-                  </div>
-                  <button
-                    onClick={() => handleDelete(transaction)}
-                    className="p-2 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-all duration-200 opacity-0 group-hover:opacity-100"
-                    aria-label="Excluir transação"
-                  >
-                    <FiTrash size={18} />
-                  </button>
-                </div>
-              </div>
-            ))}
+        {!showTransactions && (
+          <div className="p-6 text-slate-500 dark:text-slate-400 text-sm font-medium">
+            Lista de transações recolhida
           </div>
         )}
+        <div
+          className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-in-out ${
+            showTransactions ? 'max-h-[2000px] opacity-100' : 'max-h-0 opacity-0'
+          }`}
+          aria-hidden={!showTransactions}
+        >
+          {transactions.length === 0 ? (
+            <div className="p-12 text-center text-slate-500 dark:text-slate-400 font-medium">
+              Nenhuma transação registrada ainda
+            </div>
+          ) : (
+            <div className="divide-y-2 divide-blue-100 dark:divide-blue-900">
+              {transactions.map((transaction) => (
+                <div
+                  key={transaction.id}
+                  className="p-5 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition flex items-center justify-between group"
+                >
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={`p-3 rounded-xl shadow-md ${
+                        transaction.type === 'income'
+                          ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white'
+                          : 'bg-gradient-to-br from-rose-500 to-rose-600 text-white'
+                      }`}
+                    >
+                      {transaction.type === 'income' ? (
+                        <FiArrowUp size={24} />
+                      ) : (
+                        <FiArrowDown size={20} />
+                      )}
+                    </div>
+                    <div>
+                      <p className="font-semibold text-slate-800 dark:text-slate-100">{transaction.category}</p>
+                      {transaction.description && (
+                        <p className="text-sm text-slate-600 dark:text-slate-400">{transaction.description}</p>
+                      )}
+                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                        {new Date(transaction.date).toLocaleDateString('pt-BR')}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <div
+                      className={`text-xl font-bold ${
+                        transaction.type === 'income'
+                          ? 'text-emerald-600 dark:text-emerald-400'
+                          : 'text-rose-600 dark:text-rose-400'
+                      }`}
+                    >
+                      {transaction.type === 'income' ? '+' : '-'} R${' '}
+                      {transaction.amount.toFixed(2)}
+                    </div>
+                    <button
+                      onClick={() => handleDelete(transaction)}
+                      className="p-2 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-all duration-200 opacity-0 group-hover:opacity-100"
+                      aria-label="Excluir transação"
+                    >
+                      <FiTrash size={18} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
 
       {showModal && (

@@ -1,11 +1,11 @@
 'use client';
 
 import { useState, useEffect } from 'react';
-import { addDoc, collection, doc, runTransaction, onSnapshot } from 'firebase/firestore';
+import { addDoc, collection, deleteDoc, doc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from './AuthProvider';
 import { CATEGORIES } from '@/types';
-import { FiX, FiPlus, FiMinus, FiDollarSign, FiCalendar, FiTag, FiEdit3 } from 'react-icons/fi';
+import { FiX, FiPlus, FiMinus, FiDollarSign, FiCalendar, FiTag, FiEdit3, FiTrash2 } from 'react-icons/fi';
 
 interface TransactionModalProps {
   accountId: string;
@@ -18,7 +18,7 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
   const [category, setCategory] = useState<string>(CATEGORIES[0]);
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   const [description, setDescription] = useState('');
-  const [userCategories, setUserCategories] = useState<string[]>([]);
+  const [userCategories, setUserCategories] = useState<{ id: string; name: string }[]>([]);
   const [newCategory, setNewCategory] = useState('');
   const { user } = useAuth();
 
@@ -28,8 +28,11 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
     const categoriesRef = collection(db, 'users', user.uid, 'categories');
     const unsubscribe = onSnapshot(categoriesRef, (snapshot) => {
       const cats = snapshot.docs
-        .map((doc) => (doc.data().name as string | undefined)?.trim())
-        .filter(Boolean) as string[];
+        .map((doc) => {
+          const name = (doc.data().name as string | undefined)?.trim();
+          return name ? { id: doc.id, name } : null;
+        })
+        .filter(Boolean) as { id: string; name: string }[];
       setUserCategories(cats);
     });
 
@@ -38,9 +41,9 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
 
   const categoryOptions = [
     ...CATEGORIES,
-    ...userCategories.filter(
-      (cat) => !CATEGORIES.some((defaultCat) => defaultCat.toLowerCase() === cat.toLowerCase())
-    ),
+    ...userCategories
+      .map((cat) => cat.name)
+      .filter((cat) => !CATEGORIES.some((defaultCat) => defaultCat.toLowerCase() === cat.toLowerCase())),
   ];
 
   const handleAddCategory = async () => {
@@ -64,6 +67,20 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
       setCategory(name);
     } catch (error) {
       console.error('Erro ao adicionar categoria:', error);
+    }
+  };
+
+  const handleDeleteCategory = async (categoryId: string, categoryName: string) => {
+    if (!user) return;
+
+    try {
+      await deleteDoc(doc(db, 'users', user.uid, 'categories', categoryId));
+
+      if (category.toLowerCase() === categoryName.toLowerCase()) {
+        setCategory(CATEGORIES[0]);
+      }
+    } catch (error) {
+      console.error('Erro ao remover categoria:', error);
     }
   };
 
@@ -164,7 +181,7 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
               step="0.01"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 font-semibold transition-all"
+              className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 font-semibold transition-all outline-none"
               placeholder="R$ 0,00"
               required
             />
@@ -180,21 +197,21 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
               type="date"
               value={date}
               onChange={(e) => setDate(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 font-medium transition-all"
+              className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 font-medium transition-all outline-none"
               required
             />
           </div>
 
           {/* Categoria */}
           <div className="space-y-2 sm:col-span-2">
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide outline-none">
               <FiTag size={14} />
               <span>Categoria</span>
             </label>
             <select
               value={category}
               onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 font-medium transition-all"
+              className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 font-medium transition-all outline-none"
             >
               {categoryOptions.map((cat) => (
                 <option key={cat} value={cat}>
@@ -207,17 +224,42 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
                 type="text"
                 value={newCategory}
                 onChange={(e) => setNewCategory(e.target.value)}
-                className="flex-1 px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 transition-all"
+                className="flex-1 px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 transition-all outline-none"
                 placeholder="Nova categoria"
               />
               <button
                 type="button"
                 onClick={handleAddCategory}
-                className="px-3 py-2 text-sm bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all font-semibold whitespace-nowrap shadow-sm hover:shadow-md"
+                className="px-3 py-2 text-sm bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all font-semibold whitespace-nowrap shadow-sm hover:shadow-md outline-none"
               >
                 <FiPlus className="inline" size={14} /> Adicionar
               </button>
             </div>
+            {userCategories.length > 0 && (
+              <div className="space-y-1">
+                <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                  Suas categorias
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {userCategories.map((cat) => (
+                    <span
+                      key={cat.id}
+                      className="inline-flex items-center gap-2 px-3 py-1 text-xs font-semibold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700"
+                    >
+                      {cat.name}
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteCategory(cat.id, cat.name)}
+                        className="text-slate-400 hover:text-rose-500 transition-colors"
+                        aria-label={`Remover categoria ${cat.name}`}
+                      >
+                        <FiTrash2 size={14} />
+                      </button>
+                    </span>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Descrição */}
@@ -229,7 +271,7 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
             <textarea
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 resize-none transition-all"
+              className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 resize-none transition-all outline-none"
               rows={2}
               placeholder="Adicione detalhes sobre esta transação..."
             />

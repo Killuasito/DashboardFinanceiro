@@ -14,6 +14,7 @@ import {
   FiSun,
   FiMoon,
 } from 'react-icons/fi';
+import { FaHeart } from "react-icons/fa";
 
 export default function Home() {
   const [isLogin, setIsLogin] = useState(true);
@@ -207,7 +208,7 @@ export default function Home() {
                     type="email"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50 dark:focus:border-emerald-500 dark:focus:ring-emerald-600"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50 dark:focus:border-emerald-500 dark:focus:ring-emerald-600 outline-none"
                     placeholder="seu@email.com"
                     required
                   />
@@ -221,7 +222,7 @@ export default function Home() {
                     type="password"
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50 dark:focus:border-emerald-500 dark:focus:ring-emerald-600"
+                    className="w-full rounded-xl border border-slate-300 bg-white px-4 py-3 text-slate-900 shadow-sm transition focus:border-emerald-400 focus:ring-2 focus:ring-emerald-300 dark:border-slate-700 dark:bg-slate-800 dark:text-slate-50 dark:focus:border-emerald-500 dark:focus:ring-emerald-600 outline-none"
                     placeholder="••••••••"
                     required
                     minLength={6}
@@ -265,7 +266,9 @@ export default function Home() {
       {/* Footer */}
       <footer className="container mx-auto mt-12 px-6 py-8 border-t border-slate-200/80 dark:border-slate-800">
         <div className="text-center text-sm text-slate-600 dark:text-slate-400">
-          <p>© 2026 FinanceDash. Desenvolvido com ❤️ usando Next.js e Firebase</p>
+          <p>© 2026 Tiago Ferreira. 
+            <br />
+          Desenvolvido com  <FaHeart className="inline text-red-600" /></p>
         </div>
       </footer>
     </div>
