@@ -28,6 +28,9 @@ export interface Alert {
   description?: string;
   dayOfMonth: number;
   lastPaidMonth?: string | null;
+  category?: string;
+  amount?: number;
+  accountId?: string;
   createdAt?: Date;
 }
 
