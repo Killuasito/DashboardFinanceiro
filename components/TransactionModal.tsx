@@ -10,9 +10,17 @@ import { FiX, FiPlus, FiMinus, FiDollarSign, FiCalendar, FiTag, FiEdit3, FiTrash
 interface TransactionModalProps {
   accountId: string;
   onClose: () => void;
+  transaction?: {
+    id: string;
+    amount: number;
+    type: 'income' | 'expense';
+    category: string;
+    date: Date;
+    description?: string;
+  };
 }
 
-export default function TransactionModal({ accountId, onClose }: TransactionModalProps) {
+export default function TransactionModal({ accountId, onClose, transaction }: TransactionModalProps) {
   const [amount, setAmount] = useState('');
   const [type, setType] = useState<'income' | 'expense'>('expense');
   const [category, setCategory] = useState<string>(CATEGORIES[0]);
@@ -21,6 +29,23 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
   const [userCategories, setUserCategories] = useState<{ id: string; name: string }[]>([]);
   const [newCategory, setNewCategory] = useState('');
   const { user } = useAuth();
+
+  useEffect(() => {
+    if (!transaction) {
+      setAmount('');
+      setType('expense');
+      setCategory(CATEGORIES[0]);
+      setDate(new Date().toISOString().split('T')[0]);
+      setDescription('');
+      return;
+    }
+
+    setAmount(transaction.amount.toString());
+    setType(transaction.type);
+    setCategory(transaction.category);
+    setDate(transaction.date ? new Date(transaction.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
+    setDescription(transaction.description || '');
+  }, [transaction]);
 
   useEffect(() => {
     if (!user) return;
@@ -93,6 +118,35 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
 
     const accountRef = doc(db, 'users', user.uid, 'accounts', accountId);
 
+    // Edita transação existente
+    if (transaction) {
+      const transactionRef = doc(db, 'users', user.uid, 'accounts', accountId, 'transactions', transaction.id);
+
+      const oldDelta = transaction.type === 'income' ? transaction.amount : -transaction.amount;
+      const newDelta = type === 'income' ? numericAmount : -numericAmount;
+      const netChange = newDelta - oldDelta;
+
+      try {
+        await runTransaction(db, async (tx) => {
+          const accountSnap = await tx.get(accountRef);
+          const currentBalance = accountSnap.exists() ? accountSnap.data().balance || 0 : 0;
+          tx.update(accountRef, { balance: currentBalance + netChange });
+          tx.update(transactionRef, {
+            amount: numericAmount,
+            type,
+            category,
+            date: new Date(date),
+            description,
+          });
+        });
+
+        onClose();
+      } catch (error) {
+        console.error('Erro ao atualizar transação:', error);
+      }
+      return;
+    }
+
     try {
       await addDoc(
         collection(db, 'users', user.uid, 'accounts', accountId, 'transactions'),
@@ -129,8 +183,12 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
           <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 opacity-10"></div>
           <div className="relative flex items-center justify-between p-4 border-b border-blue-500/20">
             <div>
-              <h3 className="text-lg font-bold text-blue-600 dark:text-blue-400">Nova Transação</h3>
-              <p className="text-xs text-slate-500 dark:text-slate-400">Adicione uma entrada ou saída</p>
+              <h3 className="text-lg font-bold text-blue-600 dark:text-blue-400">
+                {transaction ? 'Editar Transação' : 'Nova Transação'}
+              </h3>
+              <p className="text-xs text-slate-500 dark:text-slate-400">
+                {transaction ? 'Atualize os dados desta transação' : 'Adicione uma entrada ou saída'}
+              </p>
             </div>
             <button
               onClick={onClose}
@@ -290,7 +348,7 @@ export default function TransactionModal({ accountId, onClose }: TransactionModa
               type="submit"
               className="flex-1 px-4 py-2 text-sm bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 text-white rounded-lg hover:from-blue-700 hover:via-blue-600 hover:to-cyan-600 transition-all font-semibold shadow-md shadow-blue-500/40 hover:shadow-lg hover:scale-105"
             >
-              ✓ Adicionar
+              ✓ {transaction ? 'Salvar' : 'Adicionar'}
             </button>
           </div>
         </form>

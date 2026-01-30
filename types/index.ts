@@ -22,6 +22,15 @@ export interface DashboardSummary {
   accounts: Account[];
 }
 
+export interface Alert {
+  id: string;
+  title: string;
+  description?: string;
+  dayOfMonth: number;
+  lastPaidMonth?: string | null;
+  createdAt?: Date;
+}
+
 export const CATEGORIES = [
   'Alimentação',
   'Clientes',

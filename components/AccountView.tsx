@@ -14,7 +14,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from './AuthProvider';
 import { Transaction } from '@/types';
 import TransactionModal from './TransactionModal';
-import { FiPlus, FiArrowUp, FiArrowDown, FiTrash, FiDollarSign, FiTrendingUp, FiTrendingDown, FiPieChart, FiBarChart2, FiList, FiChevronDown, FiChevronRight } from 'react-icons/fi';
+import { FiPlus, FiArrowUp, FiArrowDown, FiTrash, FiDollarSign, FiTrendingUp, FiTrendingDown, FiPieChart, FiBarChart2, FiList, FiChevronDown, FiChevronRight, FiEdit3 } from 'react-icons/fi';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent';
@@ -29,6 +29,7 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
   const [accountTitle, setAccountTitle] = useState(accountName);
   const [accountBalance, setAccountBalance] = useState(0);
   const [showModal, setShowModal] = useState(false);
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
   const [showTransactions, setShowTransactions] = useState(true);
   const { user } = useAuth();
 
@@ -333,13 +334,25 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
                       {transaction.type === 'income' ? '+' : '-'} R${' '}
                       {transaction.amount.toFixed(2)}
                     </div>
-                    <button
-                      onClick={() => handleDelete(transaction)}
-                      className="p-2 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-all duration-200 opacity-0 group-hover:opacity-100"
-                      aria-label="Excluir transação"
-                    >
-                      <FiTrash size={18} />
-                    </button>
+                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                      <button
+                        onClick={() => {
+                          setEditingTransaction(transaction);
+                          setShowModal(true);
+                        }}
+                        className="p-2 rounded-lg text-slate-400 hover:text-blue-500 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all duration-200"
+                        aria-label="Editar transação"
+                      >
+                        <FiEdit3 size={18} />
+                      </button>
+                      <button
+                        onClick={() => handleDelete(transaction)}
+                        className="p-2 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-all duration-200"
+                        aria-label="Excluir transação"
+                      >
+                        <FiTrash size={18} />
+                      </button>
+                    </div>
                   </div>
                 </div>
               ))}
@@ -349,7 +362,14 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
       </div>
 
       {showModal && (
-        <TransactionModal accountId={accountId} onClose={() => setShowModal(false)} />
+        <TransactionModal
+          accountId={accountId}
+          onClose={() => {
+            setShowModal(false);
+            setEditingTransaction(null);
+          }}
+          transaction={editingTransaction || undefined}
+        />
       )}
     </div>
   );
