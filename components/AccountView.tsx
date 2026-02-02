@@ -15,7 +15,7 @@ import { useAuth } from './AuthProvider';
 import { Transaction } from '@/types';
 import TransactionModal from './TransactionModal';
 import { FiPlus, FiArrowUp, FiArrowDown, FiTrash, FiDollarSign, FiTrendingUp, FiTrendingDown, FiPieChart, FiBarChart2, FiList, FiChevronDown, FiChevronRight, FiEdit3 } from 'react-icons/fi';
-import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer } from 'recharts';
+import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import type { TooltipProps } from 'recharts';
 import type { ValueType, NameType } from 'recharts/types/component/DefaultTooltipContent';
 
@@ -111,6 +111,18 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
   const totalExpense = monthTransactions
     .filter((t) => t.type === 'expense')
     .reduce((sum, t) => sum + t.amount, 0);
+
+  const incomeByCategory = monthTransactions
+    .filter((t) => t.type === 'income')
+    .reduce((acc, t) => {
+      acc[t.category] = (acc[t.category] || 0) + t.amount;
+      return acc;
+    }, {} as Record<string, number>);
+
+  const incomePieData = Object.entries(incomeByCategory).map(([name, value]) => ({
+    name,
+    value,
+  }));
 
   const expensesByCategory = monthTransactions
     .filter((t) => t.type === 'expense')
@@ -209,22 +221,21 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
       </div>
 
       {/* Gráficos da conta */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8">
+      <div className="grid grid-cols-1 lg:grid-cols-2 xl:grid-cols-3 gap-6 mb-8">
         <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-xl border-2 border-blue-200 dark:border-blue-900">
           <h3 className="text-2xl font-black text-blue-600 dark:text-blue-400 mb-4 flex items-center gap-2">
             <FiPieChart />
             <span>Gastos por Categoria</span>
           </h3>
           {pieData.length > 0 ? (
-            <ResponsiveContainer width="100%" height={300}>
-              <PieChart>
+            <ResponsiveContainer width="100%" height={320}>
+              <PieChart margin={{ top: 8, right: 16, bottom: 8, left: 16 }}>
                 <Pie
                   data={pieData}
                   cx="50%"
-                  cy="50%"
+                  cy="45%"
                   labelLine={false}
-                  label={(props) => `${props.name}: ${((props.percent ?? 0) * 100).toFixed(0)}%`}
-                  outerRadius={80}
+                  outerRadius={90}
                   dataKey="value"
                 >
                   {pieData.map((entry, index) => (
@@ -232,10 +243,50 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
                   ))}
                 </Pie>
                 <Tooltip formatter={tooltipFormatter} />
+                <Legend
+                  verticalAlign="bottom"
+                  height={80}
+                  wrapperStyle={{ overflowY: 'auto' }}
+                  formatter={(value: string) => value}
+                />
               </PieChart>
             </ResponsiveContainer>
           ) : (
             <p className="text-slate-500 dark:text-slate-400 text-center py-12 font-medium">Nenhum gasto registrado neste mês</p>
+          )}
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 p-6 rounded-2xl shadow-xl border-2 border-blue-200 dark:border-blue-900">
+          <h3 className="text-2xl font-black text-blue-600 dark:text-blue-400 mb-4 flex items-center gap-2">
+            <FiPieChart />
+            <span>Recebimento por Categoria</span>
+          </h3>
+          {incomePieData.length > 0 ? (
+            <ResponsiveContainer width="100%" height={320}>
+              <PieChart margin={{ top: 8, right: 16, bottom: 8, left: 16 }}>
+                <Pie
+                  data={incomePieData}
+                  cx="50%"
+                  cy="45%"
+                  labelLine={false}
+                  outerRadius={90}
+                  dataKey="value"
+                >
+                  {incomePieData.map((entry, index) => (
+                    <Cell key={`income-cell-${index}`} fill={COLORS[index % COLORS.length]} />
+                  ))}
+                </Pie>
+                <Tooltip formatter={tooltipFormatter} />
+                <Legend
+                  verticalAlign="bottom"
+                  height={80}
+                  wrapperStyle={{ overflowY: 'auto' }}
+                  formatter={(value: string) => value}
+                />
+              </PieChart>
+            </ResponsiveContainer>
+          ) : (
+            <p className="text-slate-500 dark:text-slate-400 text-center py-12 font-medium">Nenhum recebimento registrado neste mês</p>
           )}
         </div>
 
