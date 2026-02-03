@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import {
   collection,
   query,
@@ -165,6 +165,40 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
     }
     return formatCurrency(typeof value === 'number' || typeof value === 'string' ? value : 0);
   };
+
+  const sortedTransactions = useMemo(() => {
+    return [...transactions].sort((a, b) => {
+      const dateA = a.date instanceof Date ? a.date.getTime() : new Date(a.date).getTime();
+      const dateB = b.date instanceof Date ? b.date.getTime() : new Date(b.date).getTime();
+      return dateB - dateA;
+    });
+  }, [transactions]);
+
+  const transactionsByDay = useMemo(() => {
+    const groups: { key: string; label: string; items: Transaction[]; ts: number }[] = [];
+    const map = new Map<string, { items: Transaction[]; ts: number; label: string }>();
+
+    sortedTransactions.forEach((t) => {
+      const dateObj = t.date instanceof Date ? t.date : new Date(t.date);
+      const dateKey = Number.isNaN(dateObj.getTime()) ? 'invalid' : dateObj.toISOString().slice(0, 10);
+      const label = Number.isNaN(dateObj.getTime())
+        ? 'Data inválida'
+        : dateObj.toLocaleDateString('pt-BR', { weekday: 'short', day: '2-digit', month: '2-digit', year: 'numeric' });
+      const ts = Number.isNaN(dateObj.getTime()) ? 0 : dateObj.getTime();
+
+      if (!map.has(dateKey)) {
+        map.set(dateKey, { items: [], ts, label });
+      }
+      map.get(dateKey)!.items.push(t);
+    });
+
+    map.forEach((value, key) => {
+      groups.push({ key, label: value.label, items: value.items, ts: value.ts });
+    });
+
+    groups.sort((a, b) => b.ts - a.ts);
+    return groups;
+  }, [sortedTransactions]);
 
   return (
     <div className="p-4 sm:p-6 lg:p-8 min-h-screen bg-gradient-to-br from-blue-50 via-slate-50 to-cyan-50 dark:from-slate-950 dark:via-blue-950 dark:to-slate-950">
@@ -356,65 +390,75 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
             </div>
           ) : (
             <div className="divide-y-2 divide-blue-100 dark:divide-blue-900">
-              {transactions.map((transaction) => (
-                <div
-                  key={transaction.id}
-                  className="p-5 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition flex items-center justify-between group"
-                >
-                  <div className="flex items-center gap-4">
-                    <div
-                      className={`p-3 rounded-xl shadow-md ${
-                        transaction.type === 'income'
-                          ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white'
-                          : 'bg-gradient-to-br from-rose-500 to-rose-600 text-white'
-                      }`}
-                    >
-                      {transaction.type === 'income' ? (
-                        <FiArrowUp size={24} />
-                      ) : (
-                        <FiArrowDown size={20} />
-                      )}
-                    </div>
-                    <div>
-                      <p className="font-semibold text-slate-800 dark:text-slate-100">{transaction.category}</p>
-                      {transaction.description && (
-                        <p className="text-sm text-slate-600 dark:text-slate-400">{transaction.description}</p>
-                      )}
-                      <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
-                        {new Date(transaction.date).toLocaleDateString('pt-BR')}
-                      </p>
-                    </div>
+              {transactionsByDay.map((group) => (
+                <div key={group.key} className="border-b border-blue-100 dark:border-blue-900 last:border-b-0">
+                  <div className="px-5 py-3 bg-blue-50/60 dark:bg-blue-950/30 flex items-center justify-between">
+                    <p className="text-sm font-bold text-blue-700 dark:text-blue-200 uppercase tracking-wide">{group.label}</p>
+                    <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{group.items.length} transações</span>
                   </div>
-                  <div className="flex items-center gap-4">
-                    <div
-                      className={`text-xl font-bold ${
-                        transaction.type === 'income'
-                          ? 'text-emerald-600 dark:text-emerald-400'
-                          : 'text-rose-600 dark:text-rose-400'
-                      }`}
-                    >
-                      {transaction.type === 'income' ? '+' : '-'} R${' '}
-                      {transaction.amount.toFixed(2)}
-                    </div>
-                    <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                      <button
-                        onClick={() => {
-                          setEditingTransaction(transaction);
-                          setShowModal(true);
-                        }}
-                        className="p-2 rounded-lg text-slate-400 hover:text-blue-500 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all duration-200"
-                        aria-label="Editar transação"
+                  <div className="divide-y divide-blue-100 dark:divide-blue-900">
+                    {group.items.map((transaction) => (
+                      <div
+                        key={transaction.id}
+                        className="p-5 hover:bg-blue-50 dark:hover:bg-blue-950/30 transition flex items-center justify-between group"
                       >
-                        <FiEdit3 size={18} />
-                      </button>
-                      <button
-                        onClick={() => handleDelete(transaction)}
-                        className="p-2 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-all duration-200"
-                        aria-label="Excluir transação"
-                      >
-                        <FiTrash size={18} />
-                      </button>
-                    </div>
+                        <div className="flex items-center gap-4">
+                          <div
+                            className={`p-3 rounded-xl shadow-md ${
+                              transaction.type === 'income'
+                                ? 'bg-gradient-to-br from-emerald-500 to-emerald-600 text-white'
+                                : 'bg-gradient-to-br from-rose-500 to-rose-600 text-white'
+                            }`}
+                          >
+                            {transaction.type === 'income' ? (
+                              <FiArrowUp size={24} />
+                            ) : (
+                              <FiArrowDown size={20} />
+                            )}
+                          </div>
+                          <div>
+                            <p className="font-semibold text-slate-800 dark:text-slate-100">{transaction.category}</p>
+                            {transaction.description && (
+                              <p className="text-sm text-slate-600 dark:text-slate-400">{transaction.description}</p>
+                            )}
+                            <p className="text-xs text-slate-400 dark:text-slate-500 mt-1">
+                              {new Date(transaction.date).toLocaleTimeString('pt-BR', { hour: '2-digit', minute: '2-digit' })}
+                            </p>
+                          </div>
+                        </div>
+                        <div className="flex items-center gap-4">
+                          <div
+                            className={`text-xl font-bold ${
+                              transaction.type === 'income'
+                                ? 'text-emerald-600 dark:text-emerald-400'
+                                : 'text-rose-600 dark:text-rose-400'
+                            }`}
+                          >
+                            {transaction.type === 'income' ? '+' : '-'} R${' '}
+                            {transaction.amount.toFixed(2)}
+                          </div>
+                          <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button
+                              onClick={() => {
+                                setEditingTransaction(transaction);
+                                setShowModal(true);
+                              }}
+                              className="p-2 rounded-lg text-slate-400 hover:text-blue-500 dark:hover:text-blue-300 hover:bg-blue-50 dark:hover:bg-blue-900/30 transition-all duration-200"
+                              aria-label="Editar transação"
+                            >
+                              <FiEdit3 size={18} />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(transaction)}
+                              className="p-2 rounded-lg text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 hover:bg-rose-50 dark:hover:bg-rose-900/30 transition-all duration-200"
+                              aria-label="Excluir transação"
+                            >
+                              <FiTrash size={18} />
+                            </button>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               ))}

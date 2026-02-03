@@ -119,6 +119,20 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
     }
   };
 
+  const buildDateWithTime = (value: string, base?: Date) => {
+    const [year, month, day] = value.split('-').map((v) => parseInt(v, 10));
+    const ref = base ?? new Date();
+    const hours = ref.getHours();
+    const minutes = ref.getMinutes();
+    const seconds = ref.getSeconds();
+    const ms = ref.getMilliseconds();
+    if (Number.isNaN(year) || Number.isNaN(month) || Number.isNaN(day)) {
+      return ref;
+    }
+    // Preserve time from ref (existing transaction or "now") to avoid shifting to noon/UTC
+    return new Date(year, month - 1, day, hours, minutes, seconds, ms);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!user || !amount) return;
@@ -135,6 +149,7 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
       const oldDelta = transaction.type === 'income' ? transaction.amount : -transaction.amount;
       const newDelta = type === 'income' ? numericAmount : -numericAmount;
       const netChange = newDelta - oldDelta;
+      const parsedDate = buildDateWithTime(date, transaction.date ? new Date(transaction.date) : undefined);
 
       try {
         await runTransaction(db, async (tx) => {
@@ -145,7 +160,7 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
             amount: numericAmount,
             type,
             category,
-            date: new Date(date),
+            date: parsedDate,
             description,
           });
         });
@@ -158,17 +173,16 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
     }
 
     try {
-      await addDoc(
-        collection(db, 'users', user.uid, 'accounts', accountId, 'transactions'),
-        {
-          amount: numericAmount,
-          type,
-          category,
-          date: new Date(date),
-          description,
-          createdAt: new Date(),
-        }
-      );
+      const parsedDate = buildDateWithTime(date, new Date());
+
+      await addDoc(collection(db, 'users', user.uid, 'accounts', accountId, 'transactions'), {
+        amount: numericAmount,
+        type,
+        category,
+        date: parsedDate,
+        description,
+        createdAt: new Date(),
+      });
 
       // Atualiza o saldo da conta de forma transacional para refletir imediatamente no dashboard
       await runTransaction(db, async (transaction) => {
