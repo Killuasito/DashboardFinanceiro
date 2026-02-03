@@ -14,6 +14,7 @@ import { db } from '@/lib/firebase';
 import { useAuth } from './AuthProvider';
 import { Transaction } from '@/types';
 import TransactionModal from './TransactionModal';
+import FinanceAssistant from './FinanceAssistant';
 import { FiPlus, FiArrowUp, FiArrowDown, FiTrash, FiDollarSign, FiTrendingUp, FiTrendingDown, FiPieChart, FiBarChart2, FiList, FiChevronDown, FiChevronRight, FiEdit3 } from 'react-icons/fi';
 import { PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 import type { TooltipProps } from 'recharts';
@@ -308,6 +309,16 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
             </BarChart>
           </ResponsiveContainer>
         </div>
+      </div>
+
+      <div className="mb-8">
+        <FinanceAssistant
+          accountName={accountTitle}
+          accountBalance={accountBalance}
+          totalIncome={totalIncome}
+          totalExpense={totalExpense}
+          transactions={transactions}
+        />
       </div>
 
       {/* Lista de Transações */}

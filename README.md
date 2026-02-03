@@ -51,9 +51,12 @@ Uma aplicação moderna de painel financeiro construída com Next.js, React e Fi
    NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=seu_storage_bucket
    NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=seu_messaging_sender_id
    NEXT_PUBLIC_FIREBASE_APP_ID=seu_app_id
+   OPENROUTER_API_KEY=sua_chave_openrouter
    ```
 
    Você pode encontrar esses valores nas configurações do seu projeto Firebase.
+
+      Para habilitar o chatbot financeiro (modelo deepseek/deepseek-r1-0528:free via OpenRouter), defina `OPENROUTER_API_KEY` com um token válido do OpenRouter com permissão para esse modelo.
 
 ## Uso
 
