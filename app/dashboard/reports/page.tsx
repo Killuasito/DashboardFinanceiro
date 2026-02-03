@@ -192,8 +192,8 @@ export default function ReportsPage() {
 
         const normalizedType = data.type || 'payable';
         alertsResults.push({
-          id: docSnap.id,
           ...data,
+          id: docSnap.id,
           type: normalizedType,
           accountName: data.accountId ? accountNameById[data.accountId] : undefined,
         });
@@ -244,7 +244,7 @@ export default function ReportsPage() {
           <button
             type="button"
             onClick={handleGenerate}
-            className="inline-flex items-center gap-2 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 text-white px-4 py-2 rounded-lg font-semibold shadow-md hover:shadow-lg hover:scale-105 transition"
+            className="inline-flex items-center gap-2 bg-linear-to-r from-blue-600 via-blue-500 to-cyan-500 text-white px-4 py-2 rounded-lg font-semibold shadow-md hover:shadow-lg hover:scale-105 transition"
             disabled={loadingReport}
           >
             <FiRefreshCw className={loadingReport ? 'animate-spin' : ''} />
