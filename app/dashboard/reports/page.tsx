@@ -6,14 +6,37 @@ import { collection, getDocs, onSnapshot, orderBy, query, where } from 'firebase
 import { db } from '@/lib/firebase';
 import { useAuth } from '@/components/AuthProvider';
 import Sidebar from '@/components/Sidebar';
-import { Account, Transaction, CATEGORIES } from '@/types';
+import { Account, Transaction, Alert, CATEGORIES } from '@/types';
 import { FiCalendar, FiFileText, FiRefreshCw, FiTrendingDown, FiTrendingUp } from 'react-icons/fi';
 
 interface ReportItem extends Transaction {
   accountName: string;
 }
 
+interface AlertReportItem extends Alert {
+  accountName?: string;
+}
+
 const formatDateInput = (date: Date) => date.toISOString().split('T')[0];
+
+const formatMonthKey = (key: string) => {
+  const [year, month] = key.split('-');
+  return `${month}/${year}`;
+};
+
+const getMonthKeysInRange = (start: Date, end: Date) => {
+  const months: string[] = [];
+  const cursor = new Date(start.getFullYear(), start.getMonth(), 1);
+  const endLimit = new Date(end.getFullYear(), end.getMonth(), 1);
+
+  while (cursor <= endLimit) {
+    const key = `${cursor.getFullYear()}-${String(cursor.getMonth() + 1).padStart(2, '0')}`;
+    months.push(key);
+    cursor.setMonth(cursor.getMonth() + 1);
+  }
+
+  return months;
+};
 
 export default function ReportsPage() {
   const { user, loading } = useAuth();
@@ -29,6 +52,7 @@ export default function ReportsPage() {
   const [endDate, setEndDate] = useState(formatDateInput(lastDay));
   const [reportTitle, setReportTitle] = useState('');
   const [items, setItems] = useState<ReportItem[]>([]);
+  const [alertItems, setAlertItems] = useState<AlertReportItem[]>([]);
   const [loadingReport, setLoadingReport] = useState(false);
   const [error, setError] = useState('');
 
@@ -94,6 +118,7 @@ export default function ReportsPage() {
   const handleGenerate = async () => {
     if (!user) return;
     setError('');
+    setAlertItems([]);
 
     if (!startDate || !endDate) {
       setError('Preencha o período.');
@@ -123,6 +148,13 @@ export default function ReportsPage() {
     setLoadingReport(true);
     try {
       const results: ReportItem[] = [];
+      const alertsResults: AlertReportItem[] = [];
+      const accountNameById = accounts.reduce<Record<string, string>>((acc, item) => {
+        acc[item.id] = item.name;
+        return acc;
+      }, {});
+
+      const monthKeys = getMonthKeysInRange(start, end);
 
       for (const acc of targetAccounts) {
         const txRef = collection(db, 'users', user.uid, 'accounts', acc.id, 'transactions');
@@ -150,8 +182,33 @@ export default function ReportsPage() {
         });
       }
 
+      const alertsRef = collection(db, 'users', user.uid, 'alerts');
+      const alertsSnap = await getDocs(alertsRef);
+      alertsSnap.forEach((docSnap) => {
+        const data = docSnap.data() as Alert;
+        const lastPaidMonth = data.lastPaidMonth || null;
+
+        if (!lastPaidMonth || !monthKeys.includes(lastPaidMonth)) return;
+
+        const normalizedType = data.type || 'payable';
+        alertsResults.push({
+          id: docSnap.id,
+          ...data,
+          type: normalizedType,
+          accountName: data.accountId ? accountNameById[data.accountId] : undefined,
+        });
+      });
+
+      alertsResults.sort((a, b) => {
+        if (a.lastPaidMonth === b.lastPaidMonth) return (a.title || '').localeCompare(b.title || '');
+        if (!a.lastPaidMonth) return 1;
+        if (!b.lastPaidMonth) return -1;
+        return b.lastPaidMonth.localeCompare(a.lastPaidMonth);
+      });
+
       results.sort((a, b) => (b.date as any) - (a.date as any));
       setItems(results);
+      setAlertItems(alertsResults);
       setReportTitle(`Relatório - ${startDate.split('-').reverse().join('/')} a ${endDate
         .split('-')
         .reverse()
@@ -273,6 +330,51 @@ export default function ReportsPage() {
               R$ {summary.net.toFixed(2)}
             </p>
           </div>
+        </div>
+
+        <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800 mb-6">
+          <div className="px-4 py-3 border-b border-slate-200 dark:border-slate-800 flex items-center justify-between">
+            <h2 className="text-lg font-bold text-slate-800 dark:text-slate-100">Alertas pagos/recebidos</h2>
+            <span className="text-xs font-semibold text-slate-500 dark:text-slate-400">{alertItems.length} marcados no período</span>
+          </div>
+          {alertItems.length === 0 ? (
+            <div className="p-6 text-sm text-slate-500 dark:text-slate-400">Nenhum alerta marcado como pago/recebido neste período.</div>
+          ) : (
+            <div className="divide-y divide-slate-100 dark:divide-slate-800">
+              {alertItems.map((alert) => {
+                const badgeColor = alert.type === 'receivable' ? 'bg-emerald-100 text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-200' : 'bg-rose-100 text-rose-700 dark:bg-rose-900/30 dark:text-rose-200';
+                const badgeLabel = alert.type === 'receivable' ? 'Recebido' : 'Pago';
+                return (
+                  <div key={alert.id} className="px-4 py-3 flex items-center justify-between gap-3 hover:bg-blue-50 dark:hover:bg-slate-800 transition">
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <span className={`text-[11px] font-black uppercase tracking-widest px-2 py-1 rounded-full ${badgeColor}`}>
+                          {badgeLabel}
+                        </span>
+                        {alert.lastPaidMonth && (
+                          <span className="text-[11px] font-semibold text-slate-500 dark:text-slate-400">{formatMonthKey(alert.lastPaidMonth)}</span>
+                        )}
+                      </div>
+                      <p className="font-semibold text-slate-800 dark:text-slate-100">{alert.title}</p>
+                      <p className="text-xs text-slate-500 dark:text-slate-400">
+                        {alert.category || 'Sem categoria'} • {alert.accountName || 'Conta não definida'}
+                      </p>
+                      {alert.description && (
+                        <p className="text-sm text-slate-600 dark:text-slate-300 truncate max-w-[360px]">{alert.description}</p>
+                      )}
+                    </div>
+                    <div className="text-right">
+                      {typeof alert.amount === 'number' && (
+                        <p className={`text-lg font-bold ${alert.type === 'receivable' ? 'text-emerald-500' : 'text-rose-500'}`}>
+                          {alert.type === 'receivable' ? '+' : '-'} R$ {alert.amount.toFixed(2)}
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
 
         <div className="bg-white dark:bg-slate-900 rounded-xl shadow-sm border border-slate-200 dark:border-slate-800">

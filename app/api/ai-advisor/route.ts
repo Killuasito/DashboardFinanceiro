@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server';
 
 const MODEL_URL = 'https://openrouter.ai/api/v1/chat/completions';
-const MODEL_ID = 'deepseek/deepseek-r1-0528:free';
+const MODEL_ID = 'tngtech/deepseek-r1t2-chimera:free';
 
 interface ChatMessage {
   role: 'user' | 'assistant';
@@ -31,7 +31,7 @@ function buildPrompt(messages: ChatMessage[], context?: AdvisorContext) {
     .map((msg) => `${msg.role === 'assistant' ? 'Assistente' : 'Usuário'}: ${msg.content}`)
     .join('\n');
 
-  return `Você é um consultor financeiro em português. Use os dados fornecidos para sugerir economia, reequilíbrio de orçamento e próximos passos práticos. Evite respostas genéricas e proponha valores, percentuais ou cortes concretos. Se faltar dado, faça perguntas objetivas.\n\n${contextSection}\n\nHistórico de conversa:\n${conversation}\n\nResposta em tom direto e curto:`;
+  return `Você é um consultor financeiro em português. Responda em bullets curtas e numeradas quando fizer sentido. Sempre inclua valores ou percentuais; se um dado não existir, escreva "N/D" e peça o dado em até uma linha. Nunca deixe frases ou categorias sem valores. Termine a resposta completa (nada de reticências ou espaços soltos).\n\n${contextSection}\n\nHistórico de conversa:\n${conversation}\n\nResposta em tom direto e curto:`;
 }
 
 export async function POST(request: Request) {
@@ -66,7 +66,7 @@ export async function POST(request: Request) {
       body: JSON.stringify({
         model: MODEL_ID,
         messages: chatMessages,
-        max_tokens: 400,
+        max_tokens: 1200,
         temperature: 0.35,
         top_p: 0.9,
         repetition_penalty: 1.05,
@@ -82,7 +82,7 @@ export async function POST(request: Request) {
     }
 
     const data = await response.json();
-    const reply = data?.choices?.[0]?.message?.content ?? '';
+    const reply = (data?.choices?.[0]?.message?.content ?? '').trim();
 
     if (!reply) {
       return NextResponse.json(

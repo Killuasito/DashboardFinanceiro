@@ -31,6 +31,8 @@ export interface Alert {
   category?: string;
   amount?: number;
   accountId?: string;
+  type?: 'payable' | 'receivable';
+  transactionId?: string | null;
   createdAt?: Date;
 }
 

@@ -28,6 +28,7 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
   const [description, setDescription] = useState('');
   const [userCategories, setUserCategories] = useState<{ id: string; name: string }[]>([]);
   const [newCategory, setNewCategory] = useState('');
+  const [selectedUserCategoryId, setSelectedUserCategoryId] = useState('');
   const { user } = useAuth();
 
   useEffect(() => {
@@ -59,10 +60,15 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
         })
         .filter(Boolean) as { id: string; name: string }[];
       setUserCategories(cats);
+      if (cats.length === 0) {
+        setSelectedUserCategoryId('');
+      } else if (!cats.some((cat) => cat.id === selectedUserCategoryId)) {
+        setSelectedUserCategoryId('');
+      }
     });
 
     return unsubscribe;
-  }, [user]);
+  }, [user, selectedUserCategoryId]);
 
   const categoryOptions = [
     ...CATEGORIES,
@@ -103,6 +109,10 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
 
       if (category.toLowerCase() === categoryName.toLowerCase()) {
         setCategory(CATEGORIES[0]);
+      }
+
+      if (selectedUserCategoryId === categoryId) {
+        setSelectedUserCategoryId('');
       }
     } catch (error) {
       console.error('Erro ao remover categoria:', error);
@@ -294,28 +304,43 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
               </button>
             </div>
             {userCategories.length > 0 && (
-              <div className="space-y-1">
+              <div className="space-y-2">
                 <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
                   Suas categorias
                 </p>
-                <div className="flex flex-wrap gap-2">
-                  {userCategories.map((cat) => (
-                    <span
-                      key={cat.id}
-                      className="inline-flex items-center gap-2 px-3 py-1 text-xs font-semibold rounded-full bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200 border border-slate-200 dark:border-slate-700"
-                    >
-                      {cat.name}
-                      <button
-                        type="button"
-                        onClick={() => handleDeleteCategory(cat.id, cat.name)}
-                        className="text-slate-400 hover:text-rose-500 transition-colors"
-                        aria-label={`Remover categoria ${cat.name}`}
-                      >
-                        <FiTrash2 size={14} />
-                      </button>
-                    </span>
-                  ))}
+                <div className="flex flex-col sm:flex-row gap-2">
+                  <select
+                    value={selectedUserCategoryId}
+                    onChange={(e) => setSelectedUserCategoryId(e.target.value)}
+                    className="flex-1 px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 transition-all outline-none"
+                  >
+                    <option value="">Selecione uma categoria</option>
+                    {userCategories.map((cat) => (
+                      <option key={cat.id} value={cat.id}>
+                        {cat.name}
+                      </option>
+                    ))}
+                  </select>
+                  <button
+                    type="button"
+                    disabled={!selectedUserCategoryId}
+                    onClick={() => {
+                      const target = userCategories.find((cat) => cat.id === selectedUserCategoryId);
+                      if (target) handleDeleteCategory(target.id, target.name);
+                    }}
+                    className={`px-3 py-2 text-sm rounded-lg font-semibold flex items-center justify-center gap-2 transition-all border ${
+                      selectedUserCategoryId
+                        ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900/30'
+                        : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 cursor-not-allowed'
+                    }`}
+                    aria-label="Remover categoria selecionada"
+                  >
+                    <FiTrash2 size={14} /> Remover selecionada
+                  </button>
                 </div>
+                <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                  Use a lista para escolher e excluir categorias criadas sem poluir a tela.
+                </p>
               </div>
             )}
           </div>

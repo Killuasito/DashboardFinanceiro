@@ -21,6 +21,11 @@ function getCurrentMonthKey() {
   return `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
 }
 
+const ALERT_TYPES = [
+  { value: "payable", label: "A pagar" },
+  { value: "receivable", label: "A receber" },
+] as const;
+
 export default function AlertsPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [title, setTitle] = useState("");
@@ -28,6 +33,7 @@ export default function AlertsPage() {
   const [description, setDescription] = useState("");
   const [category, setCategory] = useState<string>(CATEGORIES[0]);
   const [amount, setAmount] = useState("0");
+  const [type, setType] = useState<Alert["type"]>("payable");
   const [newCategory, setNewCategory] = useState("");
   const [userCategories, setUserCategories] = useState<string[]>([]);
   const [accounts, setAccounts] = useState<Account[]>([]);
@@ -38,6 +44,7 @@ export default function AlertsPage() {
   const [editDescription, setEditDescription] = useState("");
   const [editCategory, setEditCategory] = useState<string>(CATEGORIES[0]);
   const [editAmount, setEditAmount] = useState("0");
+  const [editType, setEditType] = useState<Alert["type"]>("payable");
   const [editAccountId, setEditAccountId] = useState<string>("");
   const { user, loading } = useAuth();
   const router = useRouter();
@@ -70,7 +77,14 @@ export default function AlertsPage() {
         ...docSnap.data(),
         createdAt: docSnap.data().createdAt?.toDate(),
       })) as Alert[];
-      setAlerts(alertData);
+
+      const normalized = alertData.map((item) => ({
+        ...item,
+        type: item.type || "payable",
+        transactionId: item.transactionId ?? null,
+      }));
+
+      setAlerts(normalized);
     });
 
     return unsubscribe;
@@ -142,13 +156,16 @@ export default function AlertsPage() {
         category,
         amount: safeAmount,
         accountId: selectedAccountId,
+        type,
         lastPaidMonth: null,
+        transactionId: null,
         createdAt: new Date(),
       });
       setTitle("");
       setDescription("");
       setDayOfMonth("5");
       setAmount("0");
+      setType("payable");
       setCategory(categoryOptions[0] || CATEGORIES[0]);
       setAccountId(selectedAccountId);
     } catch (error) {
@@ -184,6 +201,7 @@ export default function AlertsPage() {
     if (!user) return;
     const alertRef = doc(db, "users", user.uid, "alerts", alertItem.id);
     const markingPaid = !isPaid;
+    const alertType = alertItem.type || "payable";
 
     try {
       if (markingPaid) {
@@ -199,25 +217,71 @@ export default function AlertsPage() {
         const txCollection = collection(db, "users", user.uid, "accounts", targetAccountId, "transactions");
         const newTxRef = doc(txCollection);
 
+        const txType = alertType === "receivable" ? "income" : "expense";
+        const balanceDelta = alertType === "receivable" ? paymentAmount : -paymentAmount;
+
         await runTransaction(db, async (tx) => {
           const accSnap = await tx.get(accountRef);
           const currentBalance = accSnap.exists() ? accSnap.data().balance || 0 : 0;
 
           tx.set(newTxRef, {
             amount: paymentAmount,
-            type: "expense",
+            type: txType,
             category: alertItem.category || categoryOptions[0] || "Outros",
             date: new Date(),
             description: alertItem.title,
             createdAt: new Date(),
           });
 
-          tx.update(accountRef, { balance: currentBalance - paymentAmount });
-          tx.update(alertRef, { lastPaidMonth: currentMonthKey, accountId: targetAccountId, amount: paymentAmount });
+          tx.update(accountRef, { balance: currentBalance + balanceDelta });
+          tx.update(alertRef, {
+            lastPaidMonth: currentMonthKey,
+            accountId: targetAccountId,
+            amount: paymentAmount,
+            transactionId: newTxRef.id,
+          });
         });
       } else {
-        await updateDoc(alertRef, {
-          lastPaidMonth: null,
+        const targetAccountId = alertItem.accountId || accountId || accounts[0]?.id;
+        const accountRef = targetAccountId
+          ? doc(db, "users", user.uid, "accounts", targetAccountId)
+          : null;
+
+        const txRef = alertItem.transactionId && targetAccountId
+          ? doc(db, "users", user.uid, "accounts", targetAccountId, "transactions", alertItem.transactionId)
+          : null;
+
+        await runTransaction(db, async (tx) => {
+          const txSnap = txRef ? await tx.get(txRef) : null;
+          const accSnap = accountRef ? await tx.get(accountRef) : null;
+
+          let amountToRevert = alertItem.amount ?? 0;
+          let txType: "income" | "expense" = alertType === "receivable" ? "income" : "expense";
+
+          if (txSnap?.exists()) {
+            const data = txSnap.data();
+            if (typeof data.amount === "number") {
+              amountToRevert = data.amount;
+            }
+            if (data.type === "income" || data.type === "expense") {
+              txType = data.type;
+            }
+          }
+
+          if (accountRef && accSnap?.exists() && amountToRevert > 0) {
+            const currentBalance = accSnap.data().balance || 0;
+            const delta = txType === "income" ? -amountToRevert : amountToRevert;
+            tx.update(accountRef, { balance: currentBalance + delta });
+          }
+
+          if (txRef && txSnap?.exists()) {
+            tx.delete(txRef);
+          }
+
+          tx.update(alertRef, {
+            lastPaidMonth: null,
+            transactionId: null,
+          });
         });
       }
     } catch (error) {
@@ -244,6 +308,7 @@ export default function AlertsPage() {
     setEditDescription(alertItem.description || "");
     setEditCategory(alertItem.category || categoryOptions[0] || CATEGORIES[0]);
     setEditAmount(String(alertItem.amount ?? 0));
+    setEditType(alertItem.type || "payable");
     setEditAccountId(alertItem.accountId || accountId || accounts[0]?.id || "");
   };
 
@@ -254,6 +319,7 @@ export default function AlertsPage() {
     setEditDescription("");
     setEditCategory(categoryOptions[0] || CATEGORIES[0]);
     setEditAmount("0");
+    setEditType("payable");
     setEditAccountId(accountId || accounts[0]?.id || "");
   };
 
@@ -278,6 +344,7 @@ export default function AlertsPage() {
         description: editDescription.trim() || null,
         category: editCategory,
         amount: safeAmount,
+        type: editType,
         accountId: targetAccountId,
       });
       cancelEdit();
@@ -362,6 +429,25 @@ export default function AlertsPage() {
                 </div>
               </div>
               <div className="space-y-3">
+                <label className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 block">Tipo</label>
+                <div className="flex gap-3 flex-col sm:flex-row">
+                  <select
+                    value={type}
+                    onChange={(e) => setType(e.target.value as Alert["type"])}
+                    className="flex-1 px-4 py-3 rounded-xl bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 focus:border-blue-500 focus:ring-2 focus:ring-blue-500 outline-none text-slate-900 dark:text-slate-100"
+                  >
+                    {ALERT_TYPES.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                  <div className="px-4 py-3 rounded-xl bg-blue-50 dark:bg-blue-900/20 text-xs font-semibold text-blue-700 dark:text-blue-200 border border-blue-100 dark:border-blue-800">
+                    Escolha se este alerta é uma despesa a pagar ou um recebimento a entrar.
+                  </div>
+                </div>
+              </div>
+              <div className="space-y-3">
                 <label className="text-sm font-bold text-slate-700 dark:text-slate-300 mb-1 block">Conta</label>
                 <select
                   value={accountId}
@@ -439,6 +525,20 @@ export default function AlertsPage() {
               <div className="grid grid-cols-1 gap-5">
                 {sortedAlerts.map((alert) => {
                   const isPaid = alert.lastPaidMonth === currentMonthKey;
+                  const alertType = alert.type || "payable";
+                  const statusLabel = alertType === "receivable"
+                    ? isPaid
+                      ? "Recebido este mês"
+                      : "Aguardando recebimento"
+                    : isPaid
+                      ? "Pago este mês"
+                      : "Aguardando pagamento";
+                  const actionLabel = isPaid
+                    ? "Marcar como pendente"
+                    : alertType === "receivable"
+                      ? "Marcar como recebido"
+                      : "Marcar como pago";
+                  const typeBadge = alertType === "receivable" ? "A receber" : "A pagar";
                   return (
                     <div
                       key={alert.id}
@@ -461,7 +561,7 @@ export default function AlertsPage() {
                                 value={editTitle}
                                 onChange={(e) => setEditTitle(e.target.value)}
                               />
-                              <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                              <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                                 <div className="space-y-1">
                                   <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Dia</label>
                                   <input
@@ -472,6 +572,20 @@ export default function AlertsPage() {
                                     onChange={(e) => setEditDay(e.target.value)}
                                     className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-center font-bold"
                                   />
+                                </div>
+                                <div className="space-y-1">
+                                  <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Tipo</label>
+                                  <select
+                                    value={editType}
+                                    onChange={(e) => setEditType(e.target.value as Alert["type"])}
+                                    className="w-full px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700"
+                                  >
+                                    {ALERT_TYPES.map((option) => (
+                                      <option key={option.value} value={option.value}>
+                                        {option.label}
+                                      </option>
+                                    ))}
+                                  </select>
                                 </div>
                                 <div className="space-y-1">
                                   <label className="text-xs font-bold text-slate-600 dark:text-slate-300">Valor</label>
@@ -560,16 +674,19 @@ export default function AlertsPage() {
                                 </span>
                                 {isPaid ? (
                                   <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-300 text-xs font-bold">
-                                    <FiCheckCircle /> Pago este mês
+                                    <FiCheckCircle /> {statusLabel}
                                   </span>
                                 ) : (
                                   <span className="inline-flex items-center gap-1 text-amber-600 dark:text-amber-300 text-xs font-bold">
-                                    <FiClock /> Aguardando pagamento
+                                    <FiClock /> {statusLabel}
                                   </span>
                                 )}
                               </div>
                               <h3 className="text-2xl font-black text-slate-900 dark:text-slate-100 mb-1">{alert.title}</h3>
                               <div className="flex flex-wrap items-center gap-2 mb-1">
+                                <span className="px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-200">
+                                  {typeBadge}
+                                </span>
                                 {alert.category && (
                                   <span className="text-xs font-bold text-blue-600 dark:text-blue-300">{alert.category}</span>
                                 )}
@@ -613,7 +730,7 @@ export default function AlertsPage() {
                               }`}
                             >
                               {isPaid ? <FiXCircle /> : <FiCheckCircle />}
-                              {isPaid ? "Marcar como pendente" : "Marcar como pago"}
+                              {actionLabel}
                             </button>
                           </div>
                         </div>
