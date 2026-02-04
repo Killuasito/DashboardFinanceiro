@@ -5,7 +5,7 @@ import { addDoc, collection, deleteDoc, doc, onSnapshot, runTransaction } from '
 import { db } from '@/lib/firebase';
 import { useAuth } from './AuthProvider';
 import { CATEGORIES } from '@/types';
-import { FiX, FiPlus, FiMinus, FiDollarSign, FiCalendar, FiTag, FiEdit3, FiTrash2 } from 'react-icons/fi';
+import { FiX, FiPlus, FiMinus, FiDollarSign, FiCalendar, FiTag, FiEdit3, FiTrash2, FiArrowRight } from 'react-icons/fi';
 
 interface TransactionModalProps {
   accountId: string;
@@ -29,6 +29,9 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
   const [userCategories, setUserCategories] = useState<{ id: string; name: string }[]>([]);
   const [newCategory, setNewCategory] = useState('');
   const [selectedUserCategoryId, setSelectedUserCategoryId] = useState('');
+  const [accounts, setAccounts] = useState<{ id: string; name: string }[]>([]);
+  const [mode, setMode] = useState<'transaction' | 'transfer'>('transaction');
+  const [destinationAccountId, setDestinationAccountId] = useState('');
   const { user } = useAuth();
 
   useEffect(() => {
@@ -38,6 +41,7 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
       setCategory(CATEGORIES[0]);
       setDate(new Date().toISOString().split('T')[0]);
       setDescription('');
+      setMode('transaction');
       return;
     }
 
@@ -46,6 +50,7 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
     setCategory(transaction.category);
     setDate(transaction.date ? new Date(transaction.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
     setDescription(transaction.description || '');
+    setMode('transaction');
   }, [transaction]);
 
   useEffect(() => {
@@ -69,6 +74,29 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
 
     return unsubscribe;
   }, [user, selectedUserCategoryId]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const accountsRef = collection(db, 'users', user.uid, 'accounts');
+    const unsubscribe = onSnapshot(accountsRef, (snapshot) => {
+      const list = snapshot.docs
+        .map((docSnap) => {
+          const name = (docSnap.data().name as string | undefined)?.trim();
+          return name ? { id: docSnap.id, name } : null;
+        })
+        .filter(Boolean) as { id: string; name: string }[];
+      setAccounts(list);
+
+      // Pick a default destination different from the source when possible
+      const firstDifferent = list.find((acc) => acc.id !== accountId);
+      if (!destinationAccountId && firstDifferent) {
+        setDestinationAccountId(firstDifferent.id);
+      }
+    });
+
+    return unsubscribe;
+  }, [user, accountId, destinationAccountId]);
 
   const categoryOptions = [
     ...CATEGORIES,
@@ -139,6 +167,83 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
 
     const numericAmount = parseFloat(amount);
     if (Number.isNaN(numericAmount)) return;
+
+    if (mode === 'transfer') {
+      const parsedDate = buildDateWithTime(date, new Date());
+      const destinationId = destinationAccountId;
+
+      if (!destinationId) {
+        window.alert('Selecione uma conta de destino para transferir.');
+        return;
+      }
+
+      if (destinationId === accountId) {
+        window.alert('Escolha uma conta diferente para realizar a transferência.');
+        return;
+      }
+
+      if (numericAmount <= 0) {
+        window.alert('Informe um valor maior que zero para transferir.');
+        return;
+      }
+
+      const sourceRef = doc(db, 'users', user.uid, 'accounts', accountId);
+      const destRef = doc(db, 'users', user.uid, 'accounts', destinationId);
+      const sourceTxRef = doc(collection(db, 'users', user.uid, 'accounts', accountId, 'transactions'));
+      const destTxRef = doc(collection(db, 'users', user.uid, 'accounts', destinationId, 'transactions'));
+
+      const sourceName = accounts.find((acc) => acc.id === accountId)?.name || 'Conta origem';
+      const destName = accounts.find((acc) => acc.id === destinationId)?.name || 'Conta destino';
+      const now = new Date();
+
+      try {
+        await runTransaction(db, async (tx) => {
+          const sourceSnap = await tx.get(sourceRef);
+          const destSnap = await tx.get(destRef);
+
+          if (!sourceSnap.exists() || !destSnap.exists()) {
+            throw new Error('Conta origem ou destino não encontrada.');
+          }
+
+          const sourceBalance = sourceSnap.data().balance || 0;
+          const destBalance = destSnap.data().balance || 0;
+
+          tx.set(sourceTxRef, {
+            amount: numericAmount,
+            type: 'expense',
+            category: 'Transferência',
+            date: parsedDate,
+            description: description || `Transferência para ${destName}`,
+            createdAt: now,
+            transferPeerAccountId: destinationId,
+            transferPeerTransactionId: destTxRef.id,
+          });
+
+          tx.set(destTxRef, {
+            amount: numericAmount,
+            type: 'income',
+            category: 'Transferência',
+            date: parsedDate,
+            description: description || `Transferência de ${sourceName}`,
+            createdAt: now,
+            transferPeerAccountId: accountId,
+            transferPeerTransactionId: sourceTxRef.id,
+          });
+
+          tx.update(sourceRef, { balance: sourceBalance - numericAmount });
+          tx.update(destRef, { balance: destBalance + numericAmount });
+        });
+
+        setAmount('');
+        setDescription('');
+        onClose();
+      } catch (error) {
+        console.error('Erro ao transferir:', error);
+        window.alert('Não foi possível completar a transferência. Tente novamente.');
+      }
+
+      return;
+    }
 
     const accountRef = doc(db, 'users', user.uid, 'accounts', accountId);
 
@@ -229,9 +334,12 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
             <div className="flex flex-row flex-wrap gap-3">
               <button
                 type="button"
-                onClick={() => setType('income')}
+                onClick={() => {
+                  setMode('transaction');
+                  setType('income');
+                }}
                 className={`flex-1 inline-flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                  type === 'income'
+                  mode === 'transaction' && type === 'income'
                     ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-500/40 scale-105 border border-emerald-400'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 border border-slate-200 dark:border-slate-700'
                 }`}
@@ -240,15 +348,35 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
               </button>
               <button
                 type="button"
-                onClick={() => setType('expense')}
+                onClick={() => {
+                  setMode('transaction');
+                  setType('expense');
+                }}
                 className={`flex-1 inline-flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
-                  type === 'expense'
+                  mode === 'transaction' && type === 'expense'
                     ? 'bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-md shadow-rose-500/40 scale-105 border border-rose-400'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-rose-50 dark:hover:bg-rose-900/20 border border-slate-200 dark:border-slate-700'
                 }`}
               >
                 <FiMinus size={16} /> Saída
               </button>
+              {!transaction && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('transfer');
+                    setType('expense');
+                    setCategory('Transferência');
+                  }}
+                  className={`flex-1 inline-flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
+                    mode === 'transfer'
+                      ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md shadow-blue-500/40 scale-105 border border-blue-400'
+                      : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-slate-200 dark:border-slate-700'
+                  }`}
+                >
+                  <FiArrowRight size={16} /> Transferência
+                </button>
+              )}
             </div>
           </div>
 
@@ -285,79 +413,108 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
           </div>
 
           {/* Categoria */}
-          <div className="space-y-2 sm:col-span-2">
-            <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide outline-none">
-              <FiTag size={14} />
-              <span>Categoria</span>
-            </label>
-            <select
-              value={category}
-              onChange={(e) => setCategory(e.target.value)}
-              className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 font-medium transition-all outline-none"
-            >
-              {categoryOptions.map((cat) => (
-                <option key={cat} value={cat}>
-                  {cat}
-                </option>
-              ))}
-            </select>
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                value={newCategory}
-                onChange={(e) => setNewCategory(e.target.value)}
-                className="flex-1 px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 transition-all outline-none"
-                placeholder="Nova categoria"
-              />
-              <button
-                type="button"
-                onClick={handleAddCategory}
-                className="px-3 py-2 text-sm bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all font-semibold whitespace-nowrap shadow-sm hover:shadow-md outline-none"
+          {mode === 'transfer' ? (
+            <div className="space-y-2 sm:col-span-2">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide outline-none">
+                <FiTag size={14} />
+                <span>Destino da transferência</span>
+              </label>
+              <select
+                value={destinationAccountId}
+                onChange={(e) => setDestinationAccountId(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 font-medium transition-all outline-none"
               >
-                <FiPlus className="inline" size={14} /> Adicionar
-              </button>
-            </div>
-            {userCategories.length > 0 && (
-              <div className="space-y-2">
-                <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
-                  Suas categorias
-                </p>
-                <div className="flex flex-col sm:flex-row gap-2">
-                  <select
-                    value={selectedUserCategoryId}
-                    onChange={(e) => setSelectedUserCategoryId(e.target.value)}
-                    className="flex-1 px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 transition-all outline-none"
-                  >
-                    <option value="">Selecione uma categoria</option>
-                    {userCategories.map((cat) => (
-                      <option key={cat.id} value={cat.id}>
-                        {cat.name}
-                      </option>
-                    ))}
-                  </select>
-                  <button
-                    type="button"
-                    disabled={!selectedUserCategoryId}
-                    onClick={() => {
-                      const target = userCategories.find((cat) => cat.id === selectedUserCategoryId);
-                      if (target) handleDeleteCategory(target.id, target.name);
-                    }}
-                    className={`px-3 py-2 text-sm rounded-lg font-semibold flex items-center justify-center gap-2 transition-all border ${
-                      selectedUserCategoryId
-                        ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900/30'
-                        : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 cursor-not-allowed'
-                    }`}
-                    aria-label="Remover categoria selecionada"
-                  >
-                    <FiTrash2 size={14} /> Remover selecionada
-                  </button>
-                </div>
-                <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                  Use a lista para escolher e excluir categorias criadas sem poluir a tela.
-                </p>
+                <option value="">Selecione a conta destino</option>
+                {accounts
+                  .filter((acc) => acc.id !== accountId)
+                  .map((acc) => (
+                    <option key={acc.id} value={acc.id}>
+                      {acc.name}
+                    </option>
+                  ))}
+              </select>
+              <p className="text-xs text-slate-600 dark:text-slate-400">
+                A transferência cria uma saída nesta conta e uma entrada na conta escolhida, mantendo os saldos sincronizados.
+              </p>
+              <div className="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200">
+                Categoria fixa: Transferência
               </div>
-            )}
-          </div>
+            </div>
+          ) : (
+            <div className="space-y-2 sm:col-span-2">
+              <label className="flex items-center gap-1.5 text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide outline-none">
+                <FiTag size={14} />
+                <span>Categoria</span>
+              </label>
+              <select
+                value={category}
+                onChange={(e) => setCategory(e.target.value)}
+                className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 font-medium transition-all outline-none"
+              >
+                {categoryOptions.map((cat) => (
+                  <option key={cat} value={cat}>
+                    {cat}
+                  </option>
+                ))}
+              </select>
+              <div className="flex flex-col sm:flex-row gap-2">
+                <input
+                  type="text"
+                  value={newCategory}
+                  onChange={(e) => setNewCategory(e.target.value)}
+                  className="flex-1 px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 transition-all outline-none"
+                  placeholder="Nova categoria"
+                />
+                <button
+                  type="button"
+                  onClick={handleAddCategory}
+                  className="px-3 py-2 text-sm bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all font-semibold whitespace-nowrap shadow-sm hover:shadow-md outline-none"
+                >
+                  <FiPlus className="inline" size={14} /> Adicionar
+                </button>
+              </div>
+              {userCategories.length > 0 && (
+                <div className="space-y-2">
+                  <p className="text-xs font-semibold text-slate-600 dark:text-slate-400 uppercase tracking-wide">
+                    Suas categorias
+                  </p>
+                  <div className="flex flex-col sm:flex-row gap-2">
+                    <select
+                      value={selectedUserCategoryId}
+                      onChange={(e) => setSelectedUserCategoryId(e.target.value)}
+                      className="flex-1 px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 transition-all outline-none"
+                    >
+                      <option value="">Selecione uma categoria</option>
+                      {userCategories.map((cat) => (
+                        <option key={cat.id} value={cat.id}>
+                          {cat.name}
+                        </option>
+                      ))}
+                    </select>
+                    <button
+                      type="button"
+                      disabled={!selectedUserCategoryId}
+                      onClick={() => {
+                        const target = userCategories.find((cat) => cat.id === selectedUserCategoryId);
+                        if (target) handleDeleteCategory(target.id, target.name);
+                      }}
+                      className={`px-3 py-2 text-sm rounded-lg font-semibold flex items-center justify-center gap-2 transition-all border ${
+                        selectedUserCategoryId
+                          ? 'bg-rose-50 dark:bg-rose-900/20 text-rose-600 dark:text-rose-300 border-rose-200 dark:border-rose-800 hover:bg-rose-100 dark:hover:bg-rose-900/30'
+                          : 'bg-slate-100 dark:bg-slate-800 text-slate-400 dark:text-slate-500 border-slate-200 dark:border-slate-700 cursor-not-allowed'
+                      }`}
+                      aria-label="Remover categoria selecionada"
+                    >
+                      <FiTrash2 size={14} /> Remover selecionada
+                    </button>
+                  </div>
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                    Use a lista para escolher e excluir categorias criadas sem poluir a tela.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Descrição */}
           <div className="sm:col-span-2">

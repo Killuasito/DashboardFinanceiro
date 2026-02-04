@@ -214,7 +214,7 @@ export default function Sidebar() {
                   <div className="flex items-start justify-between gap-3">
                     <button
                       type="button"
-                      onClick={() => router.push(`/dashboard/${account.id}`)}
+                      onClick={() => router.push(`/dashboard/${encodeURIComponent(account.id)}`)}
                       className="text-left flex-1"
                     >
                       <div className="font-bold group-hover:text-blue-400 transition-colors text-blue-100">{account.name}</div>

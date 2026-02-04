@@ -100,7 +100,7 @@ export default function DashboardHome() {
               </div>
               <div className="relative flex gap-2 mt-auto pt-4 border-t-2 border-blue-100 dark:border-blue-900">
                 <button
-                  onClick={() => router.push(`/dashboard/${account.id}`)}
+                  onClick={() => router.push(`/dashboard/${encodeURIComponent(account.id)}`)}
                   className="flex-1 py-3 rounded-xl bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 hover:from-blue-700 hover:via-blue-600 hover:to-cyan-600 text-white font-bold transition-all duration-200 shadow-lg shadow-blue-500/50 hover:shadow-xl hover:scale-[1.02]"
                 >
                   Abrir dashboard
