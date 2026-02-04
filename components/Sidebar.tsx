@@ -16,6 +16,7 @@ import {
   FiSun,
   FiBarChart2,
   FiBell,
+  FiPieChart,
   FiEdit3,
   FiCheck,
   FiX,
@@ -125,6 +126,14 @@ export default function Sidebar() {
         >
           <FiBarChart2 className="group-hover:scale-110 transition-transform text-blue-300" size={20} />
           <span className="font-bold text-blue-100">Relatórios</span>
+        </button>
+
+        <button
+          onClick={() => router.push('/dashboard/investments')}
+          className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-900/15 hover:bg-blue-800/35 transition-all duration-200 mb-6 group border border-blue-800/35 hover:border-blue-500 shadow-lg"
+        >
+          <FiPieChart className="group-hover:scale-110 transition-transform text-blue-200" size={20} />
+          <span className="font-bold text-blue-100">Investimentos</span>
         </button>
 
         <button

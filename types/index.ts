@@ -17,6 +17,28 @@ export interface Transaction {
   transferPeerTransactionId?: string | null;
 }
 
+export interface InvestmentFund {
+  id: string;
+  name: string;
+  custodianAccountId: string;
+  balance: number;
+  createdAt: Date;
+  lastQuotaValue?: number | null;
+}
+
+export interface InvestmentMovement {
+  id: string;
+  fundId: string;
+  originAccountId: string;
+  amount: number;
+  type: 'buy' | 'sell';
+  date: Date;
+  quotaValue?: number | null;
+  units?: number | null;
+  accountTransactionId?: string;
+  createdAt?: Date;
+}
+
 export interface DashboardSummary {
   totalBalance: number;
   totalIncome: number;
