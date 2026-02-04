@@ -13,6 +13,8 @@ export interface Transaction {
   category: string;
   date: Date;
   description?: string;
+  transferPeerAccountId?: string | null;
+  transferPeerTransactionId?: string | null;
 }
 
 export interface DashboardSummary {

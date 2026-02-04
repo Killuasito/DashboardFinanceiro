@@ -99,10 +99,10 @@ export default function Sidebar() {
   };
 
   return (
-    <aside className="w-64 bg-gradient-to-b from-blue-900 via-slate-950 to-slate-950 dark:from-blue-950 dark:via-slate-950 dark:to-black text-white h-screen fixed left-0 top-0 flex flex-col shadow-2xl border-r-2 border-blue-900/50">
-      <div className="p-6 border-b-2 border-blue-900/50 bg-gradient-to-r from-blue-900/20 to-transparent">
+    <aside className="w-64 bg-linear-to-b from-blue-900 via-slate-950 to-slate-950 dark:from-blue-950 dark:via-slate-950 dark:to-black text-white h-screen fixed left-0 top-0 flex flex-col shadow-2xl border-r-2 border-blue-900/50">
+      <div className="p-6 border-b-2 border-blue-900/50 bg-linear-to-r from-blue-900/20 to-transparent">
         <h1 className="text-2xl font-black flex items-center gap-3">
-          <div className="p-2 bg-gradient-to-br from-blue-600 via-blue-500 to-cyan-500 rounded-xl shadow-lg shadow-blue-500/50">
+          <div className="p-2 bg-linear-to-br from-blue-600 via-blue-500 to-cyan-500 rounded-xl shadow-lg shadow-blue-500/50">
             <FiDollarSign className="text-white" size={24} />
           </div>
           <span className="text-blue-400">FinanceDash</span>
@@ -164,7 +164,7 @@ export default function Sidebar() {
               />
               <button
                 type="submit"
-                className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 py-2.5 rounded-lg text-sm font-bold shadow-lg shadow-blue-500/50 transition-all hover:scale-105"
+                className="w-full bg-linear-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 py-2.5 rounded-lg text-sm font-bold shadow-lg shadow-blue-500/50 transition-all hover:scale-105"
               >
                 ✓ Adicionar Conta
               </button>
@@ -238,7 +238,7 @@ export default function Sidebar() {
         </div>
       </nav>
 
-      <div className="p-4 border-t-2 border-blue-900/50 space-y-2 bg-gradient-to-r from-blue-950/30 to-transparent">
+      <div className="p-4 border-t-2 border-blue-900/50 space-y-2 bg-linear-to-r from-blue-950/30 to-transparent">
         <button
           onClick={toggleTheme}
           className="w-full flex items-center gap-3 px-4 py-3 rounded-xl bg-blue-900/30 hover:bg-blue-800/50 transition-all duration-200 text-blue-200 hover:text-blue-100 group border border-blue-900/50 hover:border-blue-600 shadow-lg"

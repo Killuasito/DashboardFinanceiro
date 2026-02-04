@@ -4,20 +4,13 @@ import { useState, useEffect } from 'react';
 import { addDoc, collection, deleteDoc, doc, onSnapshot, runTransaction } from 'firebase/firestore';
 import { db } from '@/lib/firebase';
 import { useAuth } from './AuthProvider';
-import { CATEGORIES } from '@/types';
+import { CATEGORIES, Transaction } from '@/types';
 import { FiX, FiPlus, FiMinus, FiDollarSign, FiCalendar, FiTag, FiEdit3, FiTrash2, FiArrowRight } from 'react-icons/fi';
 
 interface TransactionModalProps {
   accountId: string;
   onClose: () => void;
-  transaction?: {
-    id: string;
-    amount: number;
-    type: 'income' | 'expense';
-    category: string;
-    date: Date;
-    description?: string;
-  };
+  transaction?: Transaction;
 }
 
 export default function TransactionModal({ accountId, onClose, transaction }: TransactionModalProps) {
@@ -33,6 +26,10 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
   const [mode, setMode] = useState<'transaction' | 'transfer'>('transaction');
   const [destinationAccountId, setDestinationAccountId] = useState('');
   const { user } = useAuth();
+
+  const isEditingTransfer = Boolean(
+    transaction?.transferPeerAccountId || transaction?.category === 'Transferência'
+  );
 
   useEffect(() => {
     if (!transaction) {
@@ -50,7 +47,12 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
     setCategory(transaction.category);
     setDate(transaction.date ? new Date(transaction.date).toISOString().split('T')[0] : new Date().toISOString().split('T')[0]);
     setDescription(transaction.description || '');
-    setMode('transaction');
+    if (transaction.transferPeerAccountId || transaction.category === 'Transferência') {
+      setMode('transfer');
+      setDestinationAccountId(transaction.transferPeerAccountId || '');
+    } else {
+      setMode('transaction');
+    }
   }, [transaction]);
 
   useEffect(() => {
@@ -90,7 +92,11 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
 
       // Pick a default destination different from the source when possible
       const firstDifferent = list.find((acc) => acc.id !== accountId);
-      if (!destinationAccountId && firstDifferent) {
+
+      if (destinationAccountId) return;
+      if (transaction?.transferPeerAccountId) {
+        setDestinationAccountId(transaction.transferPeerAccountId);
+      } else if (firstDifferent) {
         setDestinationAccountId(firstDifferent.id);
       }
     });
@@ -168,7 +174,7 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
     const numericAmount = parseFloat(amount);
     if (Number.isNaN(numericAmount)) return;
 
-    if (mode === 'transfer') {
+    if (!transaction && mode === 'transfer') {
       const parsedDate = buildDateWithTime(date, new Date());
       const destinationId = destinationAccountId;
 
@@ -249,6 +255,83 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
 
     // Edita transação existente
     if (transaction) {
+      const editingIsTransfer = mode === 'transfer' || Boolean(transaction.transferPeerAccountId);
+
+      if (editingIsTransfer) {
+        const destinationId = transaction.transferPeerAccountId || destinationAccountId;
+
+        if (!destinationId) {
+          window.alert('Transferência sem conta destino definida.');
+          return;
+        }
+
+        if (destinationId === accountId) {
+          window.alert('Escolha uma conta destino diferente.');
+          return;
+        }
+
+        const parsedDate = buildDateWithTime(date, transaction.date ? new Date(transaction.date) : undefined);
+        const sourceRef = doc(db, 'users', user.uid, 'accounts', accountId);
+        const destRef = doc(db, 'users', user.uid, 'accounts', destinationId);
+        const sourceTxRef = doc(db, 'users', user.uid, 'accounts', accountId, 'transactions', transaction.id);
+        const destTxId = transaction.transferPeerTransactionId;
+
+        if (!destTxId) {
+          window.alert('Não foi possível localizar a transação espelho da transferência.');
+          return;
+        }
+
+        const destTxRef = doc(db, 'users', user.uid, 'accounts', destinationId, 'transactions', destTxId);
+
+        try {
+          await runTransaction(db, async (tx) => {
+            const [sourceSnap, destSnap, destTxSnap] = await Promise.all([
+              tx.get(sourceRef),
+              tx.get(destRef),
+              tx.get(destTxRef),
+            ]);
+
+            if (!sourceSnap.exists() || !destSnap.exists() || !destTxSnap.exists()) {
+              throw new Error('Conta ou transação da transferência não encontrada.');
+            }
+
+            const sourceBalance = sourceSnap.data().balance || 0;
+            const destBalance = destSnap.data().balance || 0;
+            const oldAmount = transaction.amount;
+            const newAmount = numericAmount;
+
+            // Ajuste de saldo: origem é saída, destino é entrada
+            const updatedSourceBalance = sourceBalance + oldAmount - newAmount;
+            const updatedDestBalance = destBalance - oldAmount + newAmount;
+
+            tx.update(sourceRef, { balance: updatedSourceBalance });
+            tx.update(destRef, { balance: updatedDestBalance });
+
+            tx.update(sourceTxRef, {
+              amount: newAmount,
+              type: 'expense',
+              category: 'Transferência',
+              date: parsedDate,
+              description,
+            });
+
+            tx.update(destTxRef, {
+              amount: newAmount,
+              type: 'income',
+              category: 'Transferência',
+              date: parsedDate,
+              description,
+            });
+          });
+
+          onClose();
+        } catch (error) {
+          console.error('Erro ao editar transferência:', error);
+          window.alert('Não foi possível salvar a transferência. Tente novamente.');
+        }
+        return;
+      }
+
       const transactionRef = doc(db, 'users', user.uid, 'accounts', accountId, 'transactions', transaction.id);
 
       const oldDelta = transaction.type === 'income' ? transaction.amount : -transaction.amount;
@@ -309,7 +392,7 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
     <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center z-50 p-4">
       <div className="bg-white dark:bg-slate-900 rounded-xl shadow-2xl w-full max-w-lg border border-blue-500/20 overflow-hidden mx-auto">
         <div className="relative">
-          <div className="absolute inset-0 bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 opacity-10"></div>
+          <div className="absolute inset-0 bg-linear-to-r from-blue-600 via-blue-500 to-cyan-500 opacity-10"></div>
           <div className="relative flex items-center justify-between p-4 border-b border-blue-500/20">
             <div>
               <h3 className="text-lg font-bold text-blue-600 dark:text-blue-400">
@@ -340,9 +423,10 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
                 }}
                 className={`flex-1 inline-flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                   mode === 'transaction' && type === 'income'
-                    ? 'bg-gradient-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-500/40 scale-105 border border-emerald-400'
+                    ? 'bg-linear-to-r from-emerald-500 to-emerald-600 text-white shadow-md shadow-emerald-500/40 scale-105 border border-emerald-400'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-emerald-50 dark:hover:bg-emerald-900/20 border border-slate-200 dark:border-slate-700'
                 }`}
+                disabled={isEditingTransfer}
               >
                 <FiPlus size={16} /> Entrada
               </button>
@@ -354,13 +438,14 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
                 }}
                 className={`flex-1 inline-flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                   mode === 'transaction' && type === 'expense'
-                    ? 'bg-gradient-to-r from-rose-500 to-rose-600 text-white shadow-md shadow-rose-500/40 scale-105 border border-rose-400'
+                    ? 'bg-linear-to-r from-rose-500 to-rose-600 text-white shadow-md shadow-rose-500/40 scale-105 border border-rose-400'
                     : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-rose-50 dark:hover:bg-rose-900/20 border border-slate-200 dark:border-slate-700'
                 }`}
+                disabled={isEditingTransfer}
               >
                 <FiMinus size={16} /> Saída
               </button>
-              {!transaction && (
+              {(!transaction || isEditingTransfer) && (
                 <button
                   type="button"
                   onClick={() => {
@@ -370,9 +455,10 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
                   }}
                   className={`flex-1 inline-flex items-center justify-center gap-2 py-2 rounded-lg text-sm font-semibold transition-all duration-200 ${
                     mode === 'transfer'
-                      ? 'bg-gradient-to-r from-blue-600 to-cyan-600 text-white shadow-md shadow-blue-500/40 scale-105 border border-blue-400'
+                      ? 'bg-linear-to-r from-blue-600 to-cyan-600 text-white shadow-md shadow-blue-500/40 scale-105 border border-blue-400'
                       : 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 hover:bg-blue-50 dark:hover:bg-blue-900/20 border border-slate-200 dark:border-slate-700'
                   }`}
+                  disabled={Boolean(transaction) && !isEditingTransfer}
                 >
                   <FiArrowRight size={16} /> Transferência
                 </button>
@@ -422,7 +508,8 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
               <select
                 value={destinationAccountId}
                 onChange={(e) => setDestinationAccountId(e.target.value)}
-                className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 font-medium transition-all outline-none"
+                disabled={isEditingTransfer}
+                className="w-full px-3 py-2 text-sm border border-blue-200 dark:border-blue-800 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 dark:bg-slate-800 dark:text-slate-100 font-medium transition-all outline-none disabled:opacity-60"
               >
                 <option value="">Selecione a conta destino</option>
                 {accounts
@@ -438,6 +525,7 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
               </p>
               <div className="px-3 py-2 rounded-lg bg-slate-100 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-200">
                 Categoria fixa: Transferência
+                {isEditingTransfer && ' (destino bloqueado para edição)'}
               </div>
             </div>
           ) : (
@@ -468,7 +556,7 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
                 <button
                   type="button"
                   onClick={handleAddCategory}
-                  className="px-3 py-2 text-sm bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all font-semibold whitespace-nowrap shadow-sm hover:shadow-md outline-none"
+                  className="px-3 py-2 text-sm bg-linear-to-r from-blue-600 to-blue-700 text-white rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all font-semibold whitespace-nowrap shadow-sm hover:shadow-md outline-none"
                 >
                   <FiPlus className="inline" size={14} /> Adicionar
                 </button>
@@ -542,7 +630,7 @@ export default function TransactionModal({ accountId, onClose, transaction }: Tr
             </button>
             <button
               type="submit"
-              className="flex-1 px-4 py-2 text-sm bg-gradient-to-r from-blue-600 via-blue-500 to-cyan-500 text-white rounded-lg hover:from-blue-700 hover:via-blue-600 hover:to-cyan-600 transition-all font-semibold shadow-md shadow-blue-500/40 hover:shadow-lg hover:scale-105"
+              className="flex-1 px-4 py-2 text-sm bg-linear-to-r from-blue-600 via-blue-500 to-cyan-500 text-white rounded-lg hover:from-blue-700 hover:via-blue-600 hover:to-cyan-600 transition-all font-semibold shadow-md shadow-blue-500/40 hover:shadow-lg hover:scale-105"
             >
               ✓ {transaction ? 'Salvar' : 'Adicionar'}
             </button>
