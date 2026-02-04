@@ -19,19 +19,39 @@ interface ChatMessage {
   content: string;
 }
 
-const renderBold = (text: string): ReactNode => {
-  const tokens = text.split('**');
-  const normalized = tokens.length % 2 === 0 ? tokens.slice(0, -1).join('**') : text;
-  const parts = normalized.split(/\*\*(.+?)\*\*/g);
-  return parts.map((part, index) =>
-    index % 2 === 1 ? (
-      <strong key={`b-${index}`} className="font-semibold text-slate-900 dark:text-slate-100">
-        {part}
-      </strong>
-    ) : (
-      part
-    )
-  );
+const renderInline = (text: string): ReactNode => {
+  const fragments: ReactNode[] = [];
+  const regex = /(\*\*(.+?)\*\*|\*(.+?)\*)/g;
+  let lastIndex = 0;
+
+  for (const match of text.matchAll(regex)) {
+    if (match.index === undefined) continue;
+    if (match.index > lastIndex) {
+      fragments.push(text.slice(lastIndex, match.index));
+    }
+
+    if (match[1].startsWith('**')) {
+      fragments.push(
+        <strong key={`b-${match.index}`} className="font-semibold text-slate-900 dark:text-slate-100">
+          {match[2]}
+        </strong>
+      );
+    } else {
+      fragments.push(
+        <em key={`i-${match.index}`} className="italic text-slate-800 dark:text-slate-200">
+          {match[3]}
+        </em>
+      );
+    }
+
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) {
+    fragments.push(text.slice(lastIndex));
+  }
+
+  return fragments;
 };
 
 const renderContent = (content: string): ReactNode => {
@@ -45,7 +65,7 @@ const renderContent = (content: string): ReactNode => {
       <ul key={`ul-${nodes.length}`} className="list-disc list-outside pl-5 space-y-1">
         {bullets.map((item, idx) => (
           <li key={`li-${idx}`} className="leading-relaxed">
-            {renderBold(item)}
+            {renderInline(item)}
           </li>
         ))}
       </ul>
@@ -64,7 +84,7 @@ const renderContent = (content: string): ReactNode => {
     if (line.length > 0) {
       nodes.push(
         <p key={`p-${nodes.length}`} className="leading-relaxed mb-2 last:mb-0">
-          {renderBold(line)}
+          {renderInline(line)}
         </p>
       );
     }

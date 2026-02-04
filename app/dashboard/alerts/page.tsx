@@ -49,6 +49,7 @@ export default function AlertsPage() {
   const { user, loading } = useAuth();
   const router = useRouter();
   const currentMonthKey = useMemo(() => getCurrentMonthKey(), []);
+  const currentDay = new Date().getDate();
 
   const categoryOptions = useMemo(() => {
     const merged = [...CATEGORIES, ...userCategories];
@@ -353,7 +354,27 @@ export default function AlertsPage() {
     }
   };
 
-  const sortedAlerts = [...alerts].sort((a, b) => (a.dayOfMonth || 0) - (b.dayOfMonth || 0));
+  const sortedAlerts = useMemo(
+    () => [...alerts].sort((a, b) => (a.dayOfMonth || 0) - (b.dayOfMonth || 0)),
+    [alerts]
+  );
+
+  const overdueAlerts = useMemo(
+    () =>
+      sortedAlerts.filter((alert) => {
+        const isPaid = alert.lastPaidMonth === currentMonthKey;
+        const day = alert.dayOfMonth || 0;
+        return !isPaid && day > 0 && day < currentDay;
+      }),
+    [sortedAlerts, currentMonthKey, currentDay]
+  );
+
+  const overdueIds = useMemo(() => new Set(overdueAlerts.map((alert) => alert.id)), [overdueAlerts]);
+
+  const orderedAlerts = useMemo(() => {
+    const overdueSet = new Set(overdueAlerts.map((alert) => alert.id));
+    return [...overdueAlerts, ...sortedAlerts.filter((alert) => !overdueSet.has(alert.id))];
+  }, [overdueAlerts, sortedAlerts]);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-slate-50 to-cyan-50 dark:from-slate-950 dark:via-blue-950 dark:to-slate-950">
@@ -513,7 +534,7 @@ export default function AlertsPage() {
           </section>
 
           <section className="lg:col-span-2 space-y-4">
-            {sortedAlerts.length === 0 ? (
+            {orderedAlerts.length === 0 ? (
               <div className="bg-white dark:bg-slate-900 border-2 border-dashed border-blue-200 dark:border-blue-800 rounded-2xl p-10 text-center shadow-xl">
                 <div className="w-16 h-16 mx-auto rounded-full bg-gradient-to-br from-blue-500 to-cyan-500 text-white flex items-center justify-center mb-4 shadow-lg">
                   <FiBell size={26} />
@@ -523,7 +544,7 @@ export default function AlertsPage() {
               </div>
             ) : (
               <div className="grid grid-cols-1 gap-5">
-                {sortedAlerts.map((alert) => {
+                {orderedAlerts.map((alert) => {
                   const isPaid = alert.lastPaidMonth === currentMonthKey;
                   const alertType = alert.type || "payable";
                   const statusLabel = alertType === "receivable"
@@ -672,6 +693,11 @@ export default function AlertsPage() {
                                 <span className="px-2 py-1 rounded-full text-xs font-black uppercase tracking-widest bg-blue-100 dark:bg-blue-900/40 text-blue-700 dark:text-blue-200">
                                   Dia {alert.dayOfMonth}
                                 </span>
+                                {overdueIds.has(alert.id) && !isPaid && (
+                                  <span className="px-2 py-1 rounded-full text-[10px] font-black uppercase tracking-widest bg-rose-100 dark:bg-rose-900/50 text-rose-700 dark:text-rose-200">
+                                    Vencido
+                                  </span>
+                                )}
                                 {isPaid ? (
                                   <span className="inline-flex items-center gap-1 text-emerald-600 dark:text-emerald-300 text-xs font-bold">
                                     <FiCheckCircle /> {statusLabel}
