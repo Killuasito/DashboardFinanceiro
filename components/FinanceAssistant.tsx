@@ -1,11 +1,15 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import type { ReactNode } from 'react';
-import { Transaction } from '@/types';
-import { FiSend, FiCpu, FiAlertTriangle } from 'react-icons/fi';
+import { collection, doc, getDoc, getDocs, onSnapshot, orderBy, query, limit } from 'firebase/firestore';
+import { FiSend, FiCpu, FiAlertTriangle, FiLink2 } from 'react-icons/fi';
+import { Account, Transaction } from '@/types';
+import { db } from '@/lib/firebase';
+import { useAuth } from './AuthProvider';
 
 interface FinanceAssistantProps {
+  accountId: string;
   accountName: string;
   accountBalance: number;
   totalIncome: number;
@@ -18,6 +22,23 @@ interface ChatMessage {
   role: 'user' | 'assistant';
   content: string;
 }
+
+type AttachedAccountContext = {
+  accountId: string;
+  accountName: string;
+  accountBalance: number;
+  totalIncome: number;
+  totalExpense: number;
+  netMonth: number;
+  topExpenses: string[];
+  recentTransactions: Array<{
+    date: string;
+    type: string;
+    category: string;
+    amount: number;
+    description?: string;
+  }>;
+};
 
 const renderInline = (text: string): ReactNode => {
   const fragments: ReactNode[] = [];
@@ -95,12 +116,20 @@ const renderContent = (content: string): ReactNode => {
 };
 
 export default function FinanceAssistant({
+  accountId,
   accountName,
   accountBalance,
   totalIncome,
   totalExpense,
   transactions,
 }: FinanceAssistantProps) {
+  const { user, loading: authLoading } = useAuth();
+  const [accounts, setAccounts] = useState<Account[]>([]);
+  const [pendingAttachId, setPendingAttachId] = useState('');
+  const [attachedAccountId, setAttachedAccountId] = useState<string | null>(null);
+  const [attachedContext, setAttachedContext] = useState<AttachedAccountContext | null>(null);
+  const [attachLoading, setAttachLoading] = useState(false);
+  const [attachError, setAttachError] = useState<string | null>(null);
   const [messages, setMessages] = useState<ChatMessage[]>([
     {
       id: 'assistant-1',
@@ -108,9 +137,178 @@ export default function FinanceAssistant({
       content: 'Oi! Posso analisar entradas e saídas e sugerir cortes ou metas de economia. O que você quer ajustar primeiro?',
     },
   ]);
+  const [historyLoaded, setHistoryLoaded] = useState(false);
+  const [attachmentLoaded, setAttachmentLoaded] = useState(false);
   const [input, setInput] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const storageKey = useMemo(() => `ai-chat-${user?.uid ?? 'anon'}-${accountId}`, [user?.uid, accountId]);
+  const attachedStorageKey = useMemo(() => `${storageKey}-attached`, [storageKey]);
+
+  useEffect(() => {
+    if (!user) return;
+
+    const q = query(collection(db, 'users', user.uid, 'accounts'));
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const accountsData = snapshot.docs.map((docSnap) => ({
+        id: docSnap.id,
+        ...docSnap.data(),
+        createdAt: docSnap.data().createdAt?.toDate?.(),
+      })) as Account[];
+      setAccounts(accountsData);
+    });
+
+    return unsubscribe;
+  }, [user]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || authLoading) return;
+    const saved = localStorage.getItem(storageKey);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved) as ChatMessage[];
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          setMessages(parsed);
+        }
+      } catch (err) {
+        console.error('Falha ao carregar histórico do assistente:', err);
+      }
+    }
+    setHistoryLoaded(true);
+  }, [storageKey, authLoading]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !historyLoaded) return;
+    localStorage.setItem(storageKey, JSON.stringify(messages));
+  }, [storageKey, messages, historyLoaded]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || authLoading) return;
+    const savedAttached = localStorage.getItem(attachedStorageKey);
+    if (savedAttached) {
+      setAttachedAccountId(savedAttached);
+      setPendingAttachId(savedAttached);
+    }
+    setAttachmentLoaded(true);
+  }, [attachedStorageKey, authLoading]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || !attachmentLoaded) return;
+    if (attachedAccountId) {
+      localStorage.setItem(attachedStorageKey, attachedAccountId);
+    } else {
+      localStorage.removeItem(attachedStorageKey);
+    }
+  }, [attachedStorageKey, attachedAccountId, attachmentLoaded]);
+
+  useEffect(() => {
+    if (pendingAttachId || accounts.length === 0) return;
+    const firstOption = accounts.find((acc) => acc.id !== accountId);
+    if (firstOption) {
+      setPendingAttachId(firstOption.id);
+    }
+  }, [accounts, pendingAttachId, accountId]);
+
+  useEffect(() => {
+    if (!user || !attachedAccountId) {
+      setAttachedContext(null);
+      setAttachLoading(false);
+      setAttachError(null);
+      return;
+    }
+
+    if (attachedAccountId === accountId) {
+      setAttachError('Selecione uma conta diferente da atual.');
+      setAttachedAccountId(null);
+      return;
+    }
+
+    let cancelled = false;
+    const loadAttached = async () => {
+      setAttachLoading(true);
+      setAttachError(null);
+      try {
+        const accountRef = doc(db, 'users', user.uid, 'accounts', attachedAccountId);
+        const accountSnap = await getDoc(accountRef);
+        if (!accountSnap.exists()) {
+          throw new Error('Conta não encontrada');
+        }
+
+        const accountData = accountSnap.data();
+        const transactionsRef = collection(db, 'users', user.uid, 'accounts', attachedAccountId, 'transactions');
+        const txSnapshot = await getDocs(query(transactionsRef, orderBy('date', 'desc'), limit(120)));
+
+        const txData = txSnapshot.docs.map((docSnap) => {
+          const data = docSnap.data();
+          return {
+            id: docSnap.id,
+            accountId: attachedAccountId,
+            ...data,
+            date: data.date?.toDate?.() ?? new Date(data.date ?? Date.now()),
+          } as Transaction;
+        });
+
+        const now = new Date();
+        const monthTx = txData.filter((t) => {
+          const d = t.date instanceof Date ? t.date : new Date(t.date);
+          return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+        });
+
+        const totalIncomeOther = monthTx
+          .filter((t) => t.type === 'income')
+          .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+        const totalExpenseOther = monthTx
+          .filter((t) => t.type === 'expense')
+          .reduce((sum, t) => sum + Number(t.amount || 0), 0);
+
+        const expensesByCategory = monthTx
+          .filter((t) => t.type === 'expense')
+          .reduce<Record<string, number>>((acc, t) => {
+            acc[t.category] = (acc[t.category] || 0) + Number(t.amount || 0);
+            return acc;
+          }, {});
+
+        const topExpenses = Object.entries(expensesByCategory)
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([category, value]) => `${category}: R$ ${value.toFixed(2)}`);
+
+        const recentTransactions = txData.slice(0, 20).map((t) => ({
+          date: new Date(t.date).toISOString().split('T')[0],
+          type: t.type,
+          category: t.category,
+          amount: Number(Number(t.amount || 0).toFixed(2)),
+          description: t.description,
+        }));
+
+        if (cancelled) return;
+
+        setAttachedContext({
+          accountId: attachedAccountId,
+          accountName: accountData.name || 'Conta sem nome',
+          accountBalance: Number((accountData.balance ?? 0) as number),
+          totalIncome: Number(totalIncomeOther.toFixed(2)),
+          totalExpense: Number(totalExpenseOther.toFixed(2)),
+          netMonth: Number((totalIncomeOther - totalExpenseOther).toFixed(2)),
+          topExpenses,
+          recentTransactions,
+        });
+      } catch (err) {
+        console.error('Falha ao anexar conta:', err);
+        if (!cancelled) {
+          setAttachError('Não foi possível anexar a conta agora.');
+          setAttachedContext(null);
+        }
+      } finally {
+        if (!cancelled) setAttachLoading(false);
+      }
+    };
+
+    loadAttached();
+    return () => {
+      cancelled = true;
+    };
+  }, [user, attachedAccountId, accountId]);
 
   const quickPrompts = [
     {
@@ -134,8 +332,7 @@ export default function FinanceAssistant({
       prompt: 'Faça até 5 perguntas objetivas para diagnosticar o orçamento e priorizar ações.',
     },
   ];
-
-  const contextForModel = useMemo(() => {
+  const primaryContext = useMemo(() => {
     const recentTransactions = transactions
       .slice(0, 20)
       .map((t) => ({
@@ -159,6 +356,7 @@ export default function FinanceAssistant({
       .map(([category, value]) => `${category}: R$ ${value.toFixed(2)}`);
 
     return {
+      accountId,
       accountName,
       accountBalance: Number(accountBalance.toFixed(2)),
       totalIncome: Number(totalIncome.toFixed(2)),
@@ -167,7 +365,35 @@ export default function FinanceAssistant({
       topExpenses,
       recentTransactions,
     };
-  }, [accountName, accountBalance, totalIncome, totalExpense, transactions]);
+  }, [accountId, accountName, accountBalance, totalIncome, totalExpense, transactions]);
+
+  const contextForModel = useMemo(
+    () => ({
+      primaryAccount: primaryContext,
+      secondaryAccount: attachedContext ?? undefined,
+    }),
+    [primaryContext, attachedContext]
+  );
+
+  const attachableAccounts = useMemo(
+    () => accounts.filter((acc) => acc.id !== accountId),
+    [accounts, accountId]
+  );
+
+  const handleAttachAccount = () => {
+    if (!pendingAttachId) {
+      setAttachError('Escolha uma conta para anexar.');
+      return;
+    }
+    setAttachError(null);
+    setAttachedAccountId(pendingAttachId);
+  };
+
+  const handleClearAttachment = () => {
+    setAttachedAccountId(null);
+    setPendingAttachId('');
+    setAttachError(null);
+  };
 
   const sendMessage = async (content: string) => {
     const newUserMessage: ChatMessage = {
@@ -244,10 +470,72 @@ export default function FinanceAssistant({
         />
         <InsightTile
           title="Top gastos"
-          value={contextForModel.topExpenses?.[0] || 'Sem dados'}
+          value={primaryContext.topExpenses?.[0] || 'Sem dados'}
           tone="neutral"
           hint="Revise limites dessa categoria"
         />
+      </div>
+
+      <div className="mb-4 rounded-2xl border-2 border-blue-200 dark:border-blue-900 bg-blue-50/40 dark:bg-blue-950/20 p-4">
+        <div className="flex items-center gap-2 text-sm font-black text-blue-700 dark:text-blue-200">
+          <FiLink2 size={16} />
+          <span>Anexar outra conta</span>
+        </div>
+        <p className="text-xs text-slate-600 dark:text-slate-400 mt-1">
+          Compartilhe outra conta para a IA comparar saldos, entradas e saídas lado a lado.
+        </p>
+        <div className="mt-3 flex flex-col sm:flex-row gap-2">
+          <select
+            value={pendingAttachId}
+            onChange={(e) => setPendingAttachId(e.target.value)}
+            className="flex-1 px-3 py-2 rounded-xl border border-blue-200 dark:border-blue-800 bg-white dark:bg-slate-900 text-sm text-slate-800 dark:text-slate-100 focus:ring-2 focus:ring-blue-500 outline-none disabled:opacity-60"
+            disabled={attachLoading || attachableAccounts.length === 0}
+          >
+            <option value="">Selecione uma conta</option>
+            {attachableAccounts.length === 0 && <option value="" disabled>Nenhuma conta extra disponível</option>}
+            {attachableAccounts.map((acc) => (
+              <option key={acc.id} value={acc.id}>
+                {acc.name} — R$ {(acc.balance || 0).toFixed(2)}
+              </option>
+            ))}
+          </select>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={handleAttachAccount}
+              disabled={attachLoading || attachableAccounts.length === 0}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-bold shadow-md transition disabled:opacity-60"
+            >
+              {attachLoading ? 'Anexando...' : 'Anexar conta'}
+            </button>
+            {attachedContext && (
+              <button
+                type="button"
+                onClick={handleClearAttachment}
+                className="px-3 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-sm font-semibold text-slate-700 dark:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition"
+              >
+                Remover
+              </button>
+            )}
+          </div>
+        </div>
+        {attachError && <p className="text-xs text-rose-600 dark:text-rose-400 mt-2">{attachError}</p>}
+        {attachedContext && (
+          <div className="mt-3 grid grid-cols-1 sm:grid-cols-3 gap-3 text-sm">
+            <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800">
+              <p className="text-xs font-semibold text-blue-600 dark:text-blue-300 uppercase tracking-wider">Conta anexada</p>
+              <p className="text-base font-black text-slate-800 dark:text-slate-100 truncate">{attachedContext.accountName}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800">
+              <p className="text-xs font-semibold text-blue-600 dark:text-blue-300 uppercase tracking-wider">Saldo</p>
+              <p className="text-base font-black text-slate-800 dark:text-slate-100">R$ {attachedContext.accountBalance.toFixed(2)}</p>
+            </div>
+            <div className="p-3 rounded-xl bg-white dark:bg-slate-900 border border-blue-200 dark:border-blue-800">
+              <p className="text-xs font-semibold text-blue-600 dark:text-blue-300 uppercase tracking-wider">Fluxo do mês</p>
+              <p className="text-base font-black text-slate-800 dark:text-slate-100">R$ {attachedContext.netMonth.toFixed(2)}</p>
+            </div>
+          </div>
+        )}
       </div>
 
       <div className="flex flex-wrap gap-2 mb-4">

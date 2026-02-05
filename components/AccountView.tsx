@@ -347,6 +347,7 @@ export default function AccountView({ accountId, accountName }: AccountViewProps
 
       <div className="mb-8">
         <FinanceAssistant
+          accountId={accountId}
           accountName={accountTitle}
           accountBalance={accountBalance}
           totalIncome={totalIncome}

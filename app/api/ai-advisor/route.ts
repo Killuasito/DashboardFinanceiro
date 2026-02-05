@@ -8,11 +8,14 @@ interface ChatMessage {
   content: string;
 }
 
-interface AdvisorContext {
+interface AccountSnapshot {
+  accountId?: string;
   accountName?: string;
   accountBalance?: number;
   totalIncome?: number;
   totalExpense?: number;
+  netMonth?: number;
+  topExpenses?: string[];
   recentTransactions?: Array<{
     date: string;
     type: string;
@@ -22,16 +25,25 @@ interface AdvisorContext {
   }>;
 }
 
+interface AdvisorContext {
+  primaryAccount?: AccountSnapshot;
+  secondaryAccount?: AccountSnapshot;
+}
+
 function buildPrompt(messages: ChatMessage[], context?: AdvisorContext) {
   const contextSection = context
     ? `Contexto financeiro atual:\n${JSON.stringify(context, null, 2)}`
     : 'Sem dados financeiros adicionais.';
 
+  const dualAccountHint = context?.secondaryAccount
+    ? '\nHá duas contas: trate a primaria como foco e compare com a secundária quando sugerir cortes, riscos ou transferências.'
+    : '';
+
   const conversation = messages
     .map((msg) => `${msg.role === 'assistant' ? 'Assistente' : 'Usuário'}: ${msg.content}`)
     .join('\n');
 
-  return `Você é um consultor financeiro em português. Responda em bullets curtas e numeradas quando fizer sentido. Sempre inclua valores ou percentuais; se um dado não existir, escreva "N/D" e peça o dado em até uma linha. Nunca deixe frases ou categorias sem valores. Termine a resposta completa (nada de reticências ou espaços soltos).\n\n${contextSection}\n\nHistórico de conversa:\n${conversation}\n\nResposta em tom direto e curto:`;
+  return `Você é um consultor financeiro em português. Responda em bullets curtas e numeradas quando fizer sentido. Sempre inclua valores ou percentuais; se um dado não existir, escreva "N/D" e peça o dado em até uma linha. Nunca deixe frases ou categorias sem valores. Termine a resposta completa (nada de reticências ou espaços soltos).${dualAccountHint}\n\n${contextSection}\n\nHistórico de conversa:\n${conversation}\n\nResposta em tom direto e curto:`;
 }
 
 export async function POST(request: Request) {
